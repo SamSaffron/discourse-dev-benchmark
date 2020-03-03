@@ -91,15 +91,28 @@ def start_postgres
 end
 
 def stop_redis
-  Process.kill('KILL', redis_pid)
+  print "Stopping redis #{redis_pid} ..."
+  Process.kill('QUIT', redis_pid)
+  Process.waitpid(redis_pid)
+  puts " stopped"
 end
 
 def start_redis
   `rm -fr '#{REDIS_PATH}/dump.rdb'`
-  set_redis_pid(Process.spawn("redis-server '#{REDIS_CONF}' --port #{redis_port} --dir '#{REDIS_PATH}'"))
+  set_redis_pid(
+    Process.spawn(
+      "redis-server",
+      REDIS_CONF,
+      '--port',
+      redis_port.to_s,
+      '--dir',
+      REDIS_PATH,
+      out: '/dev/null'
+    )
+  )
   ENV['DISCOURSE_REDIS_PORT'] = redis_port.to_s
 
-  puts "Redis server is started in pid #{redis_pid}"
+  puts "Redis server is started in pid #{redis_pid} port: #{redis_port}"
 end
 
 def measure(command, iterations, warmup: 2)
