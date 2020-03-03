@@ -32,6 +32,8 @@ PG_PATH = "#{PATH}/data/pg"
 PG_CONF = "#{PG_PATH}/postgresql.conf"
 PG_SOCK_PATH = "#{PG_PATH}/sockets"
 DB_DUMP = "#{PATH}/data/db.dump"
+REDIS_PATH = "#{PATH}/data/redis"
+REDIS_CONF = "#{PATH}/data/redis/redis.conf"
 
 def port_available?(port)
   TCPServer.open(port).close
@@ -50,6 +52,18 @@ def pg_port
   @pg_port ||= find_free_port(11000..11900)
 end
 
+def redis_port
+  @redis_port ||= find_free_port(12000..12900)
+end
+
+def redis_pid
+  @redis_pid
+end
+
+def set_redis_pid(pid)
+  @redis_pid = pid
+end
+
 def start_postgres
   FileUtils.rm_rf PG_PATH
   `initdb -D '#{PG_PATH}' --auth-host=trust --locale=en_US.UTF-8 -E UTF8 2> /dev/null`
@@ -59,7 +73,7 @@ def start_postgres
   File.write(PG_CONF, conf + "\nport = #{pg_port}\nunix_socket_directories = '#{PG_SOCK_PATH}'")
 
   puts "Starting postgres on port: #{pg_port}"
-  ENV['DISCOURSE_PORT'] = pg_port.to_s
+  ENV['DISCOURSE_PG_PORT'] = pg_port.to_s
 
   Thread.new do
     `pg_ctl -D '#{PG_PATH}' start`
@@ -76,7 +90,16 @@ def start_postgres
   puts "PG server is ready and DB is loaded"
 end
 
+def stop_redis
+  Process.kill('KILL', redis_pid)
+end
+
 def start_redis
+  `rm -fr '#{REDIS_PATH}/dump.rdb'`
+  set_redis_pid(Process.spawn("redis-server '#{REDIS_CONF}' --port #{redis_port} --dir '#{REDIS_PATH}'"))
+  ENV['DISCOURSE_REDIS_PORT'] = redis_port.to_s
+
+  puts "Redis server is started in pid #{redis_pid}"
 end
 
 def measure(command, iterations, warmup: 2)
@@ -103,9 +126,11 @@ def stop_postgres
 end
 
 begin
+  start_redis
   start_postgres
 
   single_thread_tests
 ensure
+  stop_redis
   stop_postgres
 end
