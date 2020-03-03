@@ -4,6 +4,29 @@
 require 'socket'
 require 'fileutils'
 
+# https://stackoverflow.com/questions/7749568/how-can-i-do-standard-deviation-in-ruby
+module Enumerable
+
+  def sum
+    self.inject(0) { |accum, i| accum + i }
+  end
+
+  def mean
+    self.sum / self.length.to_f
+  end
+
+  def sample_variance
+    m = self.mean
+    sum = self.inject(0) { |accum, i| accum + (i - m)**2 }
+    sum / (self.length - 1).to_f
+  end
+
+  def standard_deviation
+    Math.sqrt(self.sample_variance)
+  end
+
+end
+
 PATH = File.expand_path('..', __FILE__)
 PG_PATH = "#{PATH}/data/pg"
 PG_CONF = "#{PG_PATH}/postgresql.conf"
@@ -53,22 +76,22 @@ def start_postgres
   puts "PG server is ready and DB is loaded"
 end
 
-def measure(command, iterations)
-  # throw away slowest and fastest
-  iterations += 2
+def start_redis
+end
+
+def measure(command, iterations, warmup: 2)
+  iterations += warmup
 
   durations = []
   iterations.times do
     start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     `#{command}`
     finish = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    durations << finish - start
+
+    durations << finish - start if (warmup -= 1) < 0
   end
 
-  durations.sort!
-  durations = durations[1..-2]
-
-  puts "#{durations.sum / durations.length.to_f}"
+  puts "#{durations.mean} (#{durations.standard_deviation})"
 end
 
 def single_thread_tests
