@@ -202,18 +202,21 @@ def run_tests(threads = 1)
   puts "-" * 20
   puts
 
-  result = measure_in_fork(threads: threads) do
-    Jobs.run_immediately!
+  if threads == 1
+    # not a good test to run cause of internal locking
+    result = measure_in_fork(threads: threads) do
+      Jobs.run_immediately!
 
-    PostCreator.create(
-      Discourse.system_user,
-      raw: post_body,
-      title: "I am a title #{SecureRandom.hex}",
-      skip_validations: true
-    )
+      PostCreator.create(
+        Discourse.system_user,
+        raw: post_body,
+        title: "I am a title #{SecureRandom.hex}",
+        skip_validations: true
+      )
+    end
+
+    format("Topic Creation Time - no background queue", result)
   end
-
-  format("Topic Creation Time - no background queue", result)
 
   readme = File.read("README.md")
   result = measure_in_fork(threads: threads) do
