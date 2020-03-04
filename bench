@@ -200,7 +200,7 @@ class DevBench
 
   def run_tests(threads = 1)
     puts
-    puts "Running benchmark on #{threads} thread#{threads > 1 ? "s" : "" }"
+    puts "Running benchmark on #{threads} core#{threads > 1 ? "s" : "" }"
     puts "-" * 20
     puts
 
