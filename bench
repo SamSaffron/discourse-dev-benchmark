@@ -112,6 +112,7 @@ class DevBench
       sleep 0.1
     end
 
+    `createuser -h localhost -p #{pg_port} -s -D -w sam`
     `createdb -h localhost -p #{pg_port} discourse_development`
     `psql -h localhost -p #{pg_port} discourse_development < '#{DB_DUMP}'`
 
