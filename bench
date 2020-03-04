@@ -3,6 +3,7 @@
 
 require 'socket'
 require 'fileutils'
+require 'etc'
 
 # https://stackoverflow.com/questions/7749568/how-can-i-do-standard-deviation-in-ruby
 module Enumerable
@@ -135,28 +136,38 @@ def measure(iterations: 10, warmup: 2, min_duration: 3)
   [durations.mean, durations.standard_deviation]
 end
 
-def measure_in_fork(iterations: 10, warmup: 2, min_duration: 3)
-  r, w = IO.pipe
+def measure_in_fork(threads: 1, iterations: 10, warmup: 2, min_duration: 3)
+  means = []
+  deviations = []
 
-  pid = fork do
-    require File.expand_path('../config/environment', __FILE__)
-    mean, deviation = measure(iterations: iterations, warmup: 2) do
-      yield
+  (1..threads).map do
+    Thread.new do
+      r, w = IO.pipe
+
+      pid = fork do
+        require File.expand_path('../config/environment', __FILE__)
+        mean, deviation = measure(iterations: iterations, warmup: 2) do
+          yield
+        end
+        r.close
+        w.puts mean.to_s
+        w.puts deviation.to_s
+      end
+
+      w.close
+
+      Process.wait pid
+
+      mean, deviation = r.read.split("\n")
+
+      r.close
+
+      means << mean.to_f
+      deviations << deviation.to_f
     end
-    r.close
-    w.puts mean.to_s
-    w.puts deviation.to_s
-  end
+  end.each(&:join)
 
-  w.close
-
-  Process.wait pid
-
-  mean, deviation = r.read.split("\n")
-
-  r.close
-
-  [mean.to_f, deviation.to_f]
+  [means.mean / threads.to_f, deviations.mean / threads.to_f]
 end
 
 def format(desc, result)
@@ -185,13 +196,13 @@ def post_body
   TEXT
 end
 
-def single_thread_tests
+def run_tests(threads = 1)
   puts
-  puts "Single thread tests"
+  puts "Running benchmark on #{threads} thread#{threads > 1 ? "s" : "" }"
   puts "-" * 20
   puts
 
-  result = measure_in_fork do
+  result = measure_in_fork(threads: threads) do
     Jobs.run_immediately!
 
     PostCreator.create(
@@ -205,17 +216,49 @@ def single_thread_tests
   format("Topic Creation Time - no background queue", result)
 
   readme = File.read("README.md")
-  result = measure_in_fork do
+  result = measure_in_fork(threads: threads) do
     PrettyText.cook(readme)
   end
 
   format("Cooking README.md", result)
 
-  result = measure do
+  result = measure_in_fork(threads: threads) do
     `bin/rails r Post.first`
   end
 
   format("Booting Rails", result)
+end
+
+def about
+  begin
+    require 'facter'
+  rescue LoadError
+    puts "Installing facter to gather system info, please re-run"
+    `gem install facter`
+    exit
+  end
+
+  Facter::Util::Config.external_facts_dirs = []
+  facts = Facter.to_hash
+
+  cores = Etc.nprocessors
+  facts.delete_if { |k, v|
+    !["operatingsystem", "architecture", "kernelversion",
+    "memorysize", "physicalprocessorcount", "processor0",
+    "virtual"].include?(k)
+  }
+
+  puts
+  puts
+  puts "System Info"
+  puts "-" * 20
+
+  facts.each do |k, v|
+    puts "#{k}: #{v}"
+  end
+  puts "cores: #{cores}"
+
+  puts
 end
 
 def stop_postgres
@@ -226,7 +269,10 @@ begin
   start_redis
   start_postgres
 
-  single_thread_tests
+  run_tests
+  run_tests(Etc.nprocessors)
+
+  about
 ensure
   stop_redis
   stop_postgres
