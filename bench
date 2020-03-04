@@ -284,6 +284,8 @@ class DevBench
     end
     puts "cores: #{cores}"
     puts "ruby: #{RUBY_VERSION}"
+    puts `pg_ctl --version`
+    puts `redis-server --version`
 
     puts
   end
