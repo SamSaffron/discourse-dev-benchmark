@@ -543,9 +543,10 @@ class Plugin::Instance
 
       Discourse::Utils.execute_command('mkdir', '-p', target)
       target << name.gsub(/\s/, "_")
-      # TODO a cleaner way of registering and unregistering
-      Discourse::Utils.execute_command('rm', '-f', target)
-      Discourse::Utils.execute_command('ln', '-s', public_data, target)
+      if !File.exists?(target) || File.readlink(target) != public_data
+        Discourse::Utils.execute_command('rm', '-f', target)
+        Discourse::Utils.execute_command('ln', '-s', public_data, target)
+      end
     end
 
     ensure_directory(Plugin::Instance.js_path)
@@ -558,12 +559,22 @@ class Plugin::Instance
       contents << (is_dir ? "depend_on('#{f}')" : "require_asset('#{f}')")
     end
 
-    File.delete(js_file_path) if js_asset_exists?
-
     if contents.present?
       contents.insert(0, "<%")
       contents << "%>"
-      write_asset(js_file_path, contents.join("\n"))
+
+      contents = contents.join("\n")
+
+      if File.exists?(js_file_path)
+        current_contents = File.read(js_file_path)
+        if current_contents != contents
+          File.write(js_file_path, conten)
+        end
+      else
+        write_asset(js_file_path, contents)
+      end
+    else
+      File.delete(js_file_path) if js_asset_exists?
     end
   end
 
