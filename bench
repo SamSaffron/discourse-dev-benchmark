@@ -91,10 +91,10 @@ def start_postgres
 end
 
 def stop_redis
-  print "Stopping redis #{redis_pid} ..."
+  # print "Stopping redis #{redis_pid} ..."
   Process.kill('QUIT', redis_pid)
   Process.waitpid(redis_pid)
-  puts " stopped"
+  # puts " stopped"
 end
 
 def start_redis
@@ -115,23 +115,107 @@ def start_redis
   puts "Redis server is started in pid #{redis_pid} port: #{redis_port}"
 end
 
-def measure(command, iterations, warmup: 2)
+def measure(iterations: 10, warmup: 2, min_duration: 3)
   iterations += warmup
 
+  total_duration = 0
+
   durations = []
-  iterations.times do
+
+  while (iterations > 0 || min_duration > total_duration)
     start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    `#{command}`
+    yield
     finish = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
     durations << finish - start if (warmup -= 1) < 0
+    total_duration += finish - start
+    iterations -= 1
   end
 
-  puts "#{durations.mean} (#{durations.standard_deviation})"
+  [durations.mean, durations.standard_deviation]
+end
+
+def measure_in_fork(iterations: 10, warmup: 2, min_duration: 3)
+  r, w = IO.pipe
+
+  pid = fork do
+    require File.expand_path('../config/environment', __FILE__)
+    mean, deviation = measure(iterations: iterations, warmup: 2) do
+      yield
+    end
+    r.close
+    w.puts mean.to_s
+    w.puts deviation.to_s
+  end
+
+  w.close
+
+  Process.wait pid
+
+  mean, deviation = r.read.split("\n")
+
+  r.close
+
+  [mean.to_f, deviation.to_f]
+end
+
+def format(desc, result)
+  mean, deviation = result
+  per_sec = 1.0 / mean
+
+  percent = (deviation / mean) * 100
+
+  if mean > 0.9
+    puts "#{desc}: #{mean.round(3)} (±#{percent.round(1)}%) seconds"
+  else
+    puts "#{desc}: #{per_sec.round(3)} (±#{percent.round(1)}%) op/s"
+  end
+end
+
+def topic_title
+end
+
+def post_body
+  <<~TEXT
+    I am some random post body, **I have some bold**
+
+    I have some lines
+
+    And I have the this in it #{SecureRandom.hex}
+  TEXT
 end
 
 def single_thread_tests
-  measure('bin/rails r Post.first', 10)
+  puts
+  puts "Single thread tests"
+  puts "-" * 20
+  puts
+
+  result = measure_in_fork do
+    Jobs.run_immediately!
+
+    PostCreator.create(
+      Discourse.system_user,
+      raw: post_body,
+      title: "I am a title #{SecureRandom.hex}",
+      skip_validations: true
+    )
+  end
+
+  format("Topic Creation Time - no background queue", result)
+
+  readme = File.read("README.md")
+  result = measure_in_fork do
+    PrettyText.cook(readme)
+  end
+
+  format("Cooking README.md", result)
+
+  result = measure do
+    `bin/rails r Post.first`
+  end
+
+  format("Booting Rails", result)
 end
 
 def stop_postgres
