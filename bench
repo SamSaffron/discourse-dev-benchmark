@@ -38,6 +38,23 @@ class DevBench
   REDIS_PATH = "#{PATH}/data/redis"
   REDIS_CONF = "#{PATH}/data/redis/redis.conf"
 
+  def pg_bin_path
+    return @pg_bin_path if @pg_bin_path
+
+    ["12", "11", "10"].each do |v|
+      bin_path = "/lib/postgresql/#{v}/bin"
+      if File.exist?("#{bin_path}/pg_ctl")
+        @pg_bin_path = bin_path
+        break
+      end
+    end
+    if !@pg_bin_path
+      puts "Can not find postgres bin path"
+      exit 1
+    end
+    @pg_bin_path
+  end
+
   def port_available?(port)
     TCPServer.open(port).close
     true
@@ -67,9 +84,17 @@ class DevBench
     @redis_pid = pid
   end
 
+  def pg_ctl_path
+    "#{pg_bin_path}/pg_ctl"
+  end
+
+  def initdb_path
+    "#{pg_bin_path}/initdb"
+  end
+
   def start_postgres
     FileUtils.rm_rf PG_PATH
-    `initdb -D '#{PG_PATH}' --auth-host=trust --locale=en_US.UTF-8 -E UTF8 2> /dev/null`
+    `#{initdb_path} -D '#{PG_PATH}' --auth-host=trust --locale=en_US.UTF-8 -E UTF8 2> /dev/null`
 
     FileUtils.mkdir PG_SOCK_PATH
     conf = File.read(PG_CONF)
@@ -79,11 +104,11 @@ class DevBench
     ENV['DISCOURSE_PG_PORT'] = pg_port.to_s
 
     Thread.new do
-      `pg_ctl -D '#{PG_PATH}' start`
+      `#{pg_ctl_path} -D '#{PG_PATH}' start`
     end
 
     puts "Waiting for PG server to start..."
-    while !`pg_ctl -D '#{PG_PATH}' status`.include?('server is running')
+    while !`#{pg_ctl_path} -D '#{PG_PATH}' status`.include?('server is running')
       sleep 0.1
     end
 
@@ -290,14 +315,14 @@ class DevBench
     end
     puts "cores: #{cores}"
     puts "ruby: #{RUBY_VERSION}"
-    puts `pg_ctl --version`
+    puts `#{pg_ctl_path} --version`
     puts `redis-server --version`
 
     puts
   end
 
   def stop_postgres
-    `pg_ctl -D '#{PG_PATH}' stop`
+    `#{pg_ctl_path} -D '#{PG_PATH}' stop`
   end
 
   def test_it
