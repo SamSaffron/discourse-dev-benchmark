@@ -260,6 +260,7 @@ def about
     puts "#{k}: #{v}"
   end
   puts "cores: #{cores}"
+  puts "ruby: #{RUBY_VERSION}"
 
   puts
 end
@@ -271,6 +272,9 @@ end
 begin
   start_redis
   start_postgres
+
+  puts "ok booted"
+  gets
 
   run_tests
   run_tests(Etc.nprocessors)
