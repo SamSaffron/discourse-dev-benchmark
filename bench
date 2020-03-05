@@ -49,6 +49,12 @@ class DevBench
       end
     end
     if !@pg_bin_path
+      bin_path = "/Applications/Postgres.app/Contents/Versions/latest/bin"
+      if File.exists?("#{bin_path}/pg_ctl")
+        @pg_bin_path = bin_path
+      end
+    end
+    if !@pg_bin_path
       puts "Can not find postgres bin path"
       exit 1
     end
