@@ -241,6 +241,12 @@ class DevBench
       format("Topic Creation Time - no background queue", result)
     end
 
+    result = measure_in_fork(threads: threads, iterations: 100) do
+      Pbkdf2.hash_password(SecureRandom.hex, SecureRandom.hex, 64000, "sha256")
+    end
+
+    format("PBKdf2 64000 sha256", result)
+
     readme = File.read("README.md")
     result = measure_in_fork(threads: threads) do
       PrettyText.cook(readme)
