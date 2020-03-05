@@ -85,11 +85,25 @@ class DevBench
   end
 
   def pg_ctl_path
-    "#{pg_bin_path}/pg_ctl"
+    return @pg_ctl_path if @pg_ctl_path
+
+    @pg_ctl_path = `which pg_ctl 2> /dev/null`.strip
+    if @pg_ctl_path.length == 0
+      @pg_ctl_path = "#{pg_bin_path}/pg_ctl"
+    end
+
+    @pg_ctl_path
   end
 
   def initdb_path
-    "#{pg_bin_path}/initdb"
+    return @initdb_path if @initdb_path
+
+    @initdb_path = `which initdb 2> /dev/null`.strip
+    if @initdb_path.length == 0
+      @initdb_path = "#{pg_bin_path}/initdb"
+    end
+
+    @initdb_path
   end
 
   def start_postgres
