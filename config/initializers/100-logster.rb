@@ -7,7 +7,7 @@ if GlobalSetting.skip_redis?
   return
 end
 
-Logster::Scheduler.disable if defined? Log::Scheduler
+Logster::Scheduler.disable if defined? Logster::Scheduler
 
 if Rails.env.development? && !Sidekiq.server? && ENV["RAILS_LOGS_STDOUT"] == "1"
   console = ActiveSupport::Logger.new(STDOUT)
