@@ -35,6 +35,7 @@ class DevBench
   PG_CONF = "#{PG_PATH}/postgresql.conf"
   PG_SOCK_PATH = "#{PG_PATH}/sockets"
   DB_DUMP = "#{PATH}/data/db.dump"
+  DB_TEST_DUMP = "#{PATH}/data/db_test.dump"
   REDIS_PATH = "#{PATH}/data/redis"
   REDIS_CONF = "#{PATH}/data/redis/redis.conf"
 
@@ -133,8 +134,12 @@ class DevBench
     end
 
     `createuser -h localhost -p #{pg_port} -s -D -w sam`
+
     `createdb -h localhost -p #{pg_port} discourse_development`
     `psql -h localhost -p #{pg_port} discourse_development < '#{DB_DUMP}'`
+
+    `createdb -h localhost -p #{pg_port} discourse_test`
+    `psql -h localhost -p #{pg_port} discourse_test < '#{DB_TEST_DUMP}'`
 
     puts "PG server is ready and DB is loaded"
   end
@@ -285,6 +290,12 @@ class DevBench
       end
 
       format("Topic Creation Time - no background queue", result)
+
+      result = measure_in_fork(threads: threads, iterations: 2, warmup: 1) do
+        `bin/rspec spec/models/post_spec.rb --seed 1 > /dev/null`
+      end
+
+      format("Running the post model spec (including boot)", result)
     end
 
     result = measure_in_fork(threads: threads, iterations: 100) do

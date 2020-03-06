@@ -36,6 +36,8 @@ test:
   adapter: postgresql
   database: <%= test_db %>
   min_messages: warning
+  host: 'localhost'
+  port: <%= ENV['DISCOURSE_PG_PORT'] || 11000 %>
   pool: 5
   timeout: 5000
   host_names:
