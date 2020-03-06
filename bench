@@ -133,7 +133,7 @@ class DevBench
       sleep 0.1
     end
 
-    `createuser -h localhost -p #{pg_port} -s -D -w sam`
+    `createuser -h localhost -p #{pg_port} -s -D -w sam 2> /dev/null`
 
     `createdb -h localhost -p #{pg_port} discourse_development`
     `psql -h localhost -p #{pg_port} discourse_development < '#{DB_DUMP}'`
@@ -292,7 +292,7 @@ class DevBench
       format("Topic Creation Time - no background queue", result)
 
       result = measure_in_fork(threads: threads, iterations: 2, warmup: 1) do
-        `bin/rspec spec/models/post_spec.rb --seed 1 > /dev/null`
+        `bin/rspec spec/models/post_spec.rb --seed 1`
       end
 
       format("Running the post model spec (including boot)", result)
