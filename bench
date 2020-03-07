@@ -197,8 +197,11 @@ class DevBench
         since_gc = 0
       end
 
-      durations << duration if (warmup -= 1) < 0
-      total_duration += duration
+      if (warmup -= 1) < 0
+        durations << duration
+        total_duration += duration
+      end
+
       iterations -= 1
     end
 
@@ -274,7 +277,7 @@ class DevBench
     test(name, **args, &blk)
   end
 
-  test "Topic View" do
+  test("Topic View", warmup: 15) do
     req = {
       "REQUEST_METHOD" => "GET",
       "SCRIPT_NAME" => "",
@@ -316,7 +319,7 @@ class DevBench
     @readme_md ||= File.read("README.md")
   end
 
-  test "Cook README.md" do
+  test("Cook README.md", warmup: 30) do
     PrettyText.cook(readme_md)
   end
 
