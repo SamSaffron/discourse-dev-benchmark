@@ -269,9 +269,9 @@ class DevBench
     @@tests << [name, options, blk]
   end
 
-  def self.single_thread_test(name, **options, &blk)
-    options[:single_thread] = true
-    test(name, **options, &blk)
+  def self.single_thread_test(name, **args, &blk)
+    args[:single_thread] = true
+    test(name, **args, &blk)
   end
 
   test "Topic View" do
@@ -365,6 +365,7 @@ class DevBench
     puts
 
     @@tests.each do |name, args, blk|
+      args = args.dup
       single_thread = args.delete(:single_thread)
       mode = args.delete(:mode) || :ops
       args[:threads] = threads
