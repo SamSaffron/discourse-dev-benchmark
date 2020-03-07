@@ -428,7 +428,10 @@ class DevBench
     self.class.random_file_init
 
     run_tests
-    run_tests(Etc.nprocessors)
+
+    if !ARGV.include?("--single")
+      run_tests(Etc.nprocessors)
+    end
 
     about
   ensure
