@@ -5,6 +5,9 @@ require 'socket'
 require 'fileutils'
 require 'etc'
 require 'securerandom'
+require 'optparse'
+require 'benchmark'
+require 'tempfile'
 
 # https://stackoverflow.com/questions/7749568/how-can-i-do-standard-deviation-in-ruby
 module Enumerable
@@ -190,6 +193,10 @@ class DevBench
 
       duration = finish - start
 
+      if @verbose
+        puts "duration: #{(duration * 1000)}ms"
+      end
+
       since_gc += duration
 
       if since_gc > 0.3
@@ -368,6 +375,7 @@ class DevBench
     puts
 
     @@tests.each do |name, args, blk|
+      next if @test && @test[0] != name
       args = args.dup
       single_thread = args.delete(:single_thread)
       mode = args.delete(:mode) || :ops
@@ -425,15 +433,117 @@ class DevBench
     `#{pg_ctl_path} -D '#{PG_PATH}' stop`
   end
 
+  def initialize
+    parse_args
+  end
+
+  def parse_args
+    opts = OptionParser.new do |o|
+      o.banner = "Usage: ./bench [options]"
+
+      o.on("-v", "--verbose", "Verbose output") do
+        @verbose = true
+      end
+
+      o.on("-s", "--single", "Only run single process benchmarks") do
+        @single = true
+      end
+      o.on("-t", "--test [STRING]", "Run a single test") do |t|
+        @test = @@tests.find { |name, _| name == t }
+        if !@test
+          raise OptionParser::InvalidArgument, "Can not find test"
+        end
+      end
+      o.on("-p", "--profile [STRING]", "Run a single test in profile mode") do |s|
+        @profiled_test = @@tests.find { |name, _| name == s }
+        if !@profiled_test
+          raise OptionParser::InvalidArgument, "Can not find test"
+        end
+      end
+    end
+    begin
+      opts.parse!
+    rescue => e
+      puts
+      puts e.message
+      puts
+      puts opts.help
+      exit 1
+    end
+
+  end
+
+  def profile_test
+    name, _, blk = @profiled_test
+
+    puts "Profiling #{name}"
+    puts
+
+    pid = fork do
+      require File.expand_path('../config/environment', __FILE__)
+
+      Scheduler::Defer.async = false
+
+      MethodProfiler.ensure_discourse_instrumentation!
+
+      100.times do |i|
+        GC.disable
+        MethodProfiler.start
+        blk.call
+        result = MethodProfiler.stop
+
+        redis_duration = (result.dig(:redis, :duration).to_f * 1000).round(2)
+        redis_calls = result.dig(:redis, :calls) || 0
+        sql_duration = (result.dig(:sql, :duration).to_f * 1000).round(2)
+        sql_calls = result.dig(:sql, :calls) || 0
+
+        puts "Run #{i}: #{(result[:total_duration] * 1000).round(2)}ms (sql: #{sql_duration}ms - #{sql_calls} calls, redis: #{redis_duration}ms - #{redis_calls} calls)"
+        GC.enable
+        GC.start
+      end
+
+      puts
+      GC.disable
+      Benchmark.bm do |x|
+        x.report(name) do
+          blk.call
+        end
+      end
+      GC.enable
+
+      require 'stackprof'
+      tmp = Tempfile.new('prof')
+      tmp.close
+
+      GC.disable
+      StackProf.run(mode: :wall, out: tmp.path) do
+        blk.call
+      end
+      GC.enable
+
+      puts "Stackprof report"
+      StackProf::Report.new(Marshal.load(IO.binread(tmp.path))).print_text
+
+      tmp.unlink
+
+    end
+
+    Process.wait pid
+  end
+
   def test_it
     start_redis
     start_postgres
     self.class.random_file_init
 
-    run_tests
+    if @profiled_test
+      profile_test
+    else
+      run_tests
 
-    if !ARGV.include?("--single")
-      run_tests(Etc.nprocessors)
+      if !@single
+        run_tests(Etc.nprocessors)
+      end
     end
 
     about
