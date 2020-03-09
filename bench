@@ -531,7 +531,14 @@ class DevBench
     Process.wait pid
   end
 
+  def clear_env
+    ENV.each do |k, v|
+      ENV.delete k if k.start_with? "DISCOURSE"
+    end
+  end
+
   def test_it
+    clear_env
     start_redis
     start_postgres
     self.class.random_file_init
