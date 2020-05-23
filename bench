@@ -42,7 +42,7 @@ class DevBench
   DB_TEST_DUMP = "#{PATH}/data/db_test.dump"
   REDIS_PATH = "#{PATH}/data/redis"
   REDIS_CONF = "#{PATH}/data/redis/redis.conf"
-  RANDOM_PATH = "#{PATH}/data/random_files"
+  RANDOM_PATH = "#{PATH}/data/random_files.noindex"
   RANDOM_FILES = 5000
   RANDOM_FILE_SIZE = 10_000
 
@@ -347,7 +347,7 @@ class DevBench
 
   def self.random_file
     filenumber = (@random_file_seed.rand * RANDOM_FILES).to_i
-    "data/random_files/#{filenumber}"
+    "#{RANDOM_PATH}/#{filenumber}"
   end
 
   test("Random Read") do
