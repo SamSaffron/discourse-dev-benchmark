@@ -391,13 +391,14 @@ class DevBench
   def about
     begin
       require 'facter'
+      raise LoadError if Gem::Version.new(Facter.version) < Gem::Version.new("4.0")
     rescue LoadError
       puts "Installing facter to gather system info, please re-run"
       `gem install facter`
       exit
     end
 
-    Facter::Util::Config.external_facts_dirs = []
+    Facter.reset
     facts = Facter.to_hash
 
     cores = Etc.nprocessors
