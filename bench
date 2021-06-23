@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+ENV['RUBYOPT'] = "-W0"
+
 require 'socket'
 require 'fileutils'
 require 'etc'
