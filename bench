@@ -1,7 +1,10 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-ENV['RUBYOPT'] = "-W0"
+if !(ENV['RUBYOPT'] || "").include?("-W0")
+  ENV['RUBYOPT'] = "-W0"
+  exec __FILE__
+end
 
 require 'socket'
 require 'fileutils'
