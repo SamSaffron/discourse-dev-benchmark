@@ -42,9 +42,13 @@ Discourse::Application.configure do
 
   config.action_mailer.raise_delivery_errors = true
 
-  config.log_level = ENV["DISCOURSE_DEV_LOG_LEVEL"] if ENV["DISCOURSE_DEV_LOG_LEVEL"]
+  config.log_level = ENV["DISCOURSE_DEV_LOG_LEVEL"] if ENV[
+    "DISCOURSE_DEV_LOG_LEVEL"
+  ]
 
-  config.active_record.verbose_query_logs = true if ENV["RAILS_VERBOSE_QUERY_LOGS"] == "1"
+  config.active_record.verbose_query_logs = true if ENV[
+    "RAILS_VERBOSE_QUERY_LOGS"
+  ] == "1"
 
   if defined?(BetterErrors)
     BetterErrors::Middleware.allow_ip! ENV["TRUSTED_IP"] if ENV["TRUSTED_IP"]
@@ -58,7 +62,9 @@ Discourse::Application.configure do
   config.load_mini_profiler = true if !ENV["DISABLE_MINI_PROFILER"]
 
   if hosts = ENV["DISCOURSE_DEV_HOSTS"]
-    Discourse.deprecate("DISCOURSE_DEV_HOSTS is deprecated. Use RAILS_DEVELOPMENT_HOSTS instead.")
+    Discourse.deprecate(
+      "DISCOURSE_DEV_HOSTS is deprecated. Use RAILS_DEVELOPMENT_HOSTS instead."
+    )
     config.hosts.concat(hosts.split(","))
   end
 
@@ -90,7 +96,8 @@ Discourse::Application.configure do
       end
     end
 
-    ActiveRecord::Base.logger = nil if ENV["RAILS_DISABLE_ACTIVERECORD_LOGS"] == "1"
+    ActiveRecord::Base.logger = nil if ENV["RAILS_DISABLE_ACTIVERECORD_LOGS"] ==
+      "1"
 
     if ENV["BULLET"]
       Bullet.enable = true
@@ -99,4 +106,6 @@ Discourse::Application.configure do
   end
 
   config.hosts << /\A(([a-z0-9-]+)\.)*localhost(\:\d+)?\Z/
+  # just for testing
+  config.hosts.clear
 end

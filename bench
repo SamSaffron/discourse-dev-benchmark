@@ -291,17 +291,18 @@ class DevBench
     test(name, **args, &blk)
   end
 
-  test("Topic View", warmup: 15) do
+  test("List View (json)", warmup: 15) do
     req = {
       "REQUEST_METHOD" => "GET",
       "SCRIPT_NAME" => "",
-      "PATH_INFO" => "/t/this-is-an-amazing-first-topic/11",
+      "PATH_INFO" => "/latest.json",
       "QUERY_STRING" => "",
       "SERVER_NAME" => "127.0.0.1",
       "SERVER_PORT" => "80",
       "REQUEST_PATH" => "/",
       "REMOTE_ADDR" => "127.0.0.1",
       "HTTP_VERSION" => "HTTP/1.0",
+      "HOST" => "discourse.test",
       "rack.input" => StringIO.new(""),
       "rack.version" => [1, 2],
       "rack.url_scheme" => "http"
