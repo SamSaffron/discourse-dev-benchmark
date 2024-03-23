@@ -54,7 +54,7 @@ class DevBench
   def pg_bin_path
     return @pg_bin_path if @pg_bin_path
 
-    ["12", "11", "10"].each do |v|
+    ["13", "12", "11", "10"].each do |v|
       bin_path = "/usr/lib/postgresql/#{v}/bin"
       if File.exist?("#{bin_path}/pg_ctl")
         @pg_bin_path = bin_path
