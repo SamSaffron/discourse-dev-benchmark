@@ -15,12 +15,13 @@
 # this makes it harder to reason about the API
 
 class Cache
-
   # nothing is cached for longer than 1 day EVER
   # there is no reason to have data older than this clogging redis
   # it is dangerous cause if we rename keys we will be stuck with
   # pointless data
-  MAX_CACHE_AGE = 1.day unless defined? MAX_CACHE_AGE
+  MAX_CACHE_AGE = 1.day unless defined?(MAX_CACHE_AGE)
+
+  attr_reader :namespace
 
   # we don't need this feature, 1 day expiry is enough
   # it makes lookups a tad cheaper
@@ -45,9 +46,7 @@ class Cache
   end
 
   def clear
-    keys.each do |k|
-      redis.del(k)
-    end
+    keys.each { |k| redis.del(k) }
   end
 
   def normalize_key(key)
@@ -56,7 +55,7 @@ class Cache
 
   def exist?(name)
     key = normalize_key(name)
-    redis.exists(key)
+    redis.exists?(key)
   end
 
   # this removes a bunch of stuff we do not need like instrumentation and versioning
@@ -66,7 +65,7 @@ class Cache
   end
 
   def write(name, value, expires_in: nil)
-    write_entry(normalize_key(name), value, expires_in: nil)
+    write_entry(normalize_key(name), value, expires_in: expires_in)
   end
 
   def delete(name)
@@ -78,13 +77,11 @@ class Cache
       key = normalize_key(name)
       raw = nil
 
-      if !force
-        raw = redis.get(key)
-      end
+      raw = redis.get(key) if !force
 
       if raw
         begin
-          Marshal.load(raw)
+          Marshal.load(raw) # rubocop:disable Security/MarshalLoad
         rescue => e
           log_first_exception(e)
         end
@@ -94,7 +91,8 @@ class Cache
         val
       end
     elsif force
-      raise ArgumentError, "Missing block: Calling `Cache#fetch` with `force: true` requires a block."
+      raise ArgumentError,
+            "Missing block: Calling `Cache#fetch` with `force: true` requires a block."
     else
       read(name)
     end
@@ -103,7 +101,7 @@ class Cache
   protected
 
   def log_first_exception(e)
-    if !defined? @logged_a_warning
+    if !defined?(@logged_a_warning)
       @logged_a_warning = true
       Discourse.warn_exception(e, "Corrupt cache... skipping entry for key #{key}")
     end
@@ -111,7 +109,7 @@ class Cache
 
   def read_entry(key)
     if data = redis.get(key)
-      Marshal.load(data)
+      Marshal.load(data) # rubocop:disable Security/MarshalLoad
     end
   rescue => e
     # corrupt cache, this can happen if Marshal version
@@ -127,5 +125,4 @@ class Cache
     redis.setex(key, expiry, dumped)
     true
   end
-
 end

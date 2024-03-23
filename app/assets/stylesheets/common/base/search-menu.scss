@@ -1,11 +1,59 @@
-.search-menu {
-  .search-input {
-    position: relative;
-    padding: 0.5em 3px;
+@mixin user-item-flex {
+  display: flex;
+  flex-direction: column;
+  line-height: var(--line-height-medium);
+  color: var(--primary-high-or-secondary-low);
+}
+
+@mixin separator {
+  border-top: 1px solid var(--primary-low);
+  margin-top: 0.5em;
+  padding-top: 0.5em;
+}
+
+$search-pad-vertical: 0.25em;
+$search-pad-horizontal: 0.5em;
+
+.search-menu,
+.search-menu-container {
+  .menu-panel .panel-body-contents {
+    overflow-y: auto;
   }
 
-  .search-context .show-help {
-    float: right;
+  .search-input {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: var(--secondary);
+    border: 1px solid var(--primary-400);
+    border-radius: var(--d-input-border-radius);
+    margin: 1px;
+    padding: 0.25rem;
+
+    input#search-term {
+      background: none;
+      border: 0;
+      margin-bottom: 0;
+      width: auto;
+      flex-grow: 1;
+      padding-right: 50px;
+      &:focus {
+        outline: none;
+      }
+    }
+
+    .btn.search-context {
+      margin: 2px;
+      margin-right: 0;
+      white-space: nowrap;
+      background-color: var(--primary-300);
+      &:hover {
+        background-color: var(--primary-medium);
+      }
+    }
+    &:focus-within {
+      @include default-focus;
+    }
   }
 
   .heading {
@@ -15,27 +63,28 @@
     }
   }
 
-  input[type="text"] {
-    box-sizing: border-box;
-    width: calc(100% - 6px);
-    height: 32px;
+  .menu-panel {
+    border: 0;
+    box-shadow: var(--shadow-dropdown);
+    padding: 1rem;
   }
 
-  .search-context {
-    padding: 0 5px;
+  &.menu-panel-results {
+    position: relative;
 
-    label {
-      margin-bottom: 0;
+    .menu-panel {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: unset;
+      width: unset;
     }
-  }
-
-  .search-context + .results {
-    margin-top: 5px;
   }
 
   .results {
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
+    padding-top: $search-pad-vertical;
 
     .list {
       min-width: 100px;
@@ -45,11 +94,8 @@
           // https://css-tricks.com/snippets/css/prevent-long-urls-from-breaking-out-of-container/
           overflow-wrap: break-word;
           word-wrap: break-word;
-          -ms-word-break: break-all;
           word-break: break-all;
           word-break: break-word;
-          -ms-hyphens: auto;
-          -moz-hyphens: auto;
           -webkit-hyphens: auto;
           hyphens: auto;
           margin-top: 0.25em;
@@ -58,214 +104,306 @@
     }
 
     .search-result-topic {
+      .first-line {
+        display: block;
+        line-height: var(--line-height-medium);
+      }
+
       .second-line {
         display: flex;
         flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0 0.5em;
+      }
+    }
+
+    .search-result-post {
+      .blurb {
+        font-size: var(--font-down-1);
+      }
+    }
+
+    .search-result-category {
+      .widget-link {
+        margin-bottom: 0;
+      }
+    }
+
+    .search-result-group .group-result,
+    .search-result-user {
+      .search-link {
+        display: flex;
         align-items: center;
 
-        .discourse-tags {
-          flex-wrap: wrap;
-          display: contents;
+        img.avatar {
+          margin-right: 10px;
         }
+      }
+
+      .user-titles {
+        @include user-item-flex;
+
+        .name {
+          font-weight: 700;
+        }
+
+        .username,
+        .name,
+        .custom-field {
+          color: var(--primary-high-or-secondary-low);
+        }
+
+        .custom-field {
+          font-size: var(--font-down-2);
+        }
+      }
+      .user-result {
+        display: flex;
+        align-items: center;
+        font-size: var(--font-down-1);
       }
     }
 
-    .main-results {
+    .search-result-group .group-result {
       display: flex;
-      flex: 1 1 auto;
-      .topic-statuses {
-        color: $primary-medium;
+      gap: 0.5em;
+
+      &.--with-flair {
+        align-items: center;
+      }
+
+      .avatar-flair__wrapper,
+      .d-icon-users {
+        margin-top: 0.1em; // vertical alignment
+      }
+
+      .avatar-flair {
+        width: 1.58em;
+        height: 1.6em;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+
+        .d-icon {
+          font-size: var(--font-down-1);
+          color: currentColor;
+        }
+      }
+
+      .avatar-flair {
+        border-radius: 50%;
+        &.avatar-flair-image {
+          background-repeat: no-repeat;
+          background-size: 100% 100%;
+        }
+      }
+
+      .group-names {
+        @include user-item-flex;
+        min-width: 0;
+        .name,
+        .slug {
+          @include ellipsis;
+        }
+
+        &.--group-with-slug {
+          .name {
+            font-weight: 700;
+          }
+        }
       }
     }
 
-    .main-results + .secondary-results {
-      border-left: 1px solid $primary-low;
-      margin-left: 1em;
-      padding-left: 1em;
-      max-width: 33%;
+    .search-result-category,
+    .search-result-tag {
+      + .search-result-user,
+      + .search-result-group {
+        @include separator;
+      }
     }
 
-    .secondary-results {
+    .search-result-user .user-result img.avatar,
+    .search-item-user {
       display: flex;
-      flex-direction: column;
-      flex: 1 1 auto;
+      align-self: center;
 
-      .separator {
-        margin-bottom: 1em;
-        margin-top: 1em;
-        height: 1px;
-        background: $primary-low;
+      img.avatar {
+        width: 20px;
+        height: 20px;
+        margin-right: 0.5em;
       }
-
-      .search-result-tag {
-        .discourse-tag {
-          font-size: $font-down-1;
-        }
-      }
-
-      .search-result-category {
-        .widget-link {
-          margin-bottom: 0;
-        }
-      }
-
-      .search-result-group {
-        .search-link {
-          color: $primary-high;
-
-          &:hover {
-            color: $primary;
-          }
-        }
-
-        .group-result {
-          display: flex;
-          align-items: center;
-
-          .d-icon,
-          .avatar-flair {
-            min-width: 25px;
-            margin-right: 0.5em;
-
-            .d-icon {
-              margin-right: 0;
-            }
-          }
-
-          .avatar-flair-image {
-            background-repeat: no-repeat;
-            background-size: 100% 100%;
-            min-height: 25px;
-          }
-
-          .group-names {
-            display: flex;
-            flex-direction: column;
-            overflow: auto;
-            line-height: $line-height-medium;
-
-            &:hover {
-              .name,
-              .slug {
-                color: $primary-high;
-              }
-            }
-
-            .name,
-            .slug {
-              @include ellipsis;
-            }
-
-            .name {
-              font-weight: 700;
-            }
-
-            .slug {
-              font-size: $font-down-1;
-              color: $primary-high;
-            }
-          }
-        }
-      }
-
-      .search-result-category,
-      .search-result-user,
-      .search-result-group,
-      .search-result-tag {
-        .list {
-          display: block;
-
-          .item {
-            .widget-link.search-link {
-              flex: 1;
-              font-size: $font-0;
-              padding: 5px;
-            }
-          }
-        }
-      }
-
-      .search-result-user {
-        .user-result {
-          display: flex;
-          flex-direction: row;
-          align-items: center;
-
-          .avatar {
-            margin-right: 0.5em;
-            display: block;
-            min-width: 25px;
-          }
-
-          .user-titles {
-            display: flex;
-            flex-direction: column;
-            overflow: auto;
-            line-height: $line-height-medium;
-
-            .username,
-            .name {
-              @include ellipsis;
-            }
-
-            .username {
-              color: dark-light-choose($primary-high, $secondary-low);
-              font-size: $font-down-1;
-            }
-
-            .name {
-              color: dark-light-choose($primary-high, $secondary-low);
-              font-size: $font-0;
-              font-weight: 700;
-            }
-          }
-        }
+      .username {
+        margin-right: 0.33em;
       }
     }
 
-    .show-more {
-      padding: 5px;
+    .label-suffix {
+      color: var(--primary-medium);
+      margin-right: 0.33em;
+    }
+
+    .search-item-tag {
+      color: var(--primary-high);
+
+      .d-icon {
+        margin-right: 0 !important;
+      }
+    }
+
+    .extra-hint {
+      color: var(--primary-low-mid);
+      font-size: var(--font-down-1);
+    }
+
+    .search-item-slug {
+      .keyword {
+        margin-right: 0.33em;
+      }
+      .badge-wrapper {
+        font-size: var(--font-0);
+        margin-left: 2px;
+      }
+    }
+
+    .search-menu-initial-options {
+      + .search-result-tag,
+      + .search-result-category,
+      + .search-result-user,
+      + .search-result-group {
+        @include separator;
+      }
+    }
+
+    .search-menu-initial-options,
+    .search-result-tag,
+    .search-menu-assistant {
+      .search-item-prefix {
+        margin-right: 0.33em;
+      }
+      .badge-category__wrapper {
+        font-size: var(--font-0);
+      }
+      .search-link {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        @include ellipsis;
+        .d-icon {
+          margin-right: 0.33em;
+          vertical-align: middle;
+        }
+        .d-icon-tag {
+          font-size: var(--font-down-2);
+        }
+
+        .d-icon-search {
+          font-size: var(--font-down-1);
+        }
+      }
     }
   }
 
-  .searching {
-    position: absolute;
-    top: 1.15em;
-    right: 1em;
+  .browser-search-tip,
+  .search-random-quick-tip {
+    padding: $search-pad-vertical 1px;
+    font-size: var(--font-down-2);
+    color: var(--primary-medium);
+    .tip-label {
+      background-color: rgba(var(--tertiary-rgb), 0.1);
+      margin-right: 4px;
+      padding: 2px 4px;
+      display: inline-block;
+      &.tip-clickable {
+        cursor: pointer;
+      }
+    }
+  }
 
+  .search-menu-recent {
+    @include separator;
+
+    .heading {
+      display: flex;
+      justify-content: space-between;
+      h4 {
+        color: var(--primary-medium);
+        font-weight: normal;
+        margin-bottom: 0;
+      }
+      .clear-recent-searches {
+        cursor: pointer;
+        color: var(--primary-low-mid);
+      }
+    }
+  }
+
+  .browser-search-tip {
+    padding-top: 0.5em;
+  }
+
+  .searching {
     .spinner {
-      width: 10px;
-      height: 10px;
+      width: 12px;
+      height: 12px;
       border-width: 2px;
       margin: 0;
+      margin-top: 2px;
+    }
+
+    .show-advanced-search,
+    a.clear-search {
+      padding: 0px 3px;
+      display: inline-block;
+      background-color: transparent;
+      .d-icon {
+        color: var(--primary-medium);
+      }
+      &:focus,
+      &:hover {
+        .d-icon {
+          color: var(--primary-high);
+        }
+      }
+    }
+
+    a.clear-search {
+      margin-right: 3px;
     }
   }
 
   .no-results {
-    padding: 5px;
-  }
-
-  .filter {
-    padding: 0;
-    &:hover {
-      background: transparent;
-    }
+    padding: $search-pad-vertical $search-pad-horizontal;
   }
 
   .search-link {
-    margin-bottom: 0.25em;
+    display: block;
+    padding: $search-pad-vertical $search-pad-horizontal;
 
-    .badge-category-parent {
-      line-height: $line-height-small;
+    // This is purposefully redundant
+    // the search widget can be used outside of the header
+    // and the focus/hover styles from the header in those cases wouldn't follow
+    &:focus,
+    &:hover {
+      background-color: var(--highlight-bg);
     }
 
     .topic {
-      display: inline-block;
-      line-height: $line-height-medium;
+      display: block;
     }
 
     .topic-title {
+      color: var(--tertiary);
+      overflow-wrap: anywhere;
+      @supports not (overflow-wrap: anywhere) {
+        word-break: break-word;
+      }
       margin-right: 0.25em;
+    }
+  }
+  .search-result-topic,
+  .search-result-post {
+    .search-link {
+      padding: 0.5em;
     }
   }
 }

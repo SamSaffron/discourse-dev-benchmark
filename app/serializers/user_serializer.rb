@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class UserSerializer < UserCardSerializer
+  include UserTagNotificationsMixin
+  include UserSidebarMixin
 
   attributes :bio_raw,
              :bio_cooked,
@@ -16,7 +18,9 @@ class UserSerializer < UserCardSerializer
              :second_factor_backup_enabled,
              :second_factor_remaining_backup_codes,
              :associated_accounts,
-             :profile_background_upload_url
+             :profile_background_upload_url,
+             :can_upload_profile_header,
+             :can_upload_user_card_background
 
   has_one :invited_by, embed: :object, serializer: BasicUserSerializer
   has_many :groups, embed: :object, serializer: BasicGroupSerializer
@@ -27,12 +31,11 @@ class UserSerializer < UserCardSerializer
     can_edit
   end
 
-  staff_attributes :post_count,
-                   :can_be_deleted,
-                   :can_delete_all_posts
+  staff_attributes :post_count, :can_be_deleted, :can_delete_all_posts
 
   private_attributes :locale,
                      :muted_category_ids,
+                     :regular_category_ids,
                      :watched_tags,
                      :watching_first_post_tags,
                      :tracked_tags,
@@ -49,18 +52,30 @@ class UserSerializer < UserCardSerializer
                      :has_title_badges,
                      :muted_usernames,
                      :ignored_usernames,
+                     :allowed_pm_usernames,
                      :mailing_list_posts_per_day,
                      :can_change_bio,
+                     :can_change_location,
+                     :can_change_website,
+                     :can_change_tracking_preferences,
                      :user_api_keys,
-                     :user_auth_tokens
+                     :user_passkeys,
+                     :user_auth_tokens,
+                     :user_notification_schedule,
+                     :use_logo_small_as_avatar,
+                     :sidebar_tags,
+                     :sidebar_category_ids,
+                     :display_sidebar_tags
 
-  untrusted_attributes :bio_raw,
-                       :bio_cooked,
-                       :profile_background_upload_url,
+  untrusted_attributes :bio_raw, :bio_cooked, :profile_background_upload_url
 
   ###
   ### ATTRIBUTES
   ###
+  #
+  def user_notification_schedule
+    object.user_notification_schedule || UserNotificationSchedule::DEFAULT
+  end
 
   def mailing_list_posts_per_day
     val = Post.estimate_posts_per_day
@@ -68,20 +83,23 @@ class UserSerializer < UserCardSerializer
   end
 
   def groups
-    object.groups.order(:id)
-      .visible_groups(scope.user).members_visible_groups(scope.user)
+    object.groups.order(:id).visible_groups(scope.user).members_visible_groups(scope.user)
   end
 
   def group_users
     object.group_users.order(:group_id)
   end
 
+  def include_group_users?
+    user_is_current_user || scope.is_admin?
+  end
+
   def include_associated_accounts?
-    (object.id && object.id == scope.user.try(:id))
+    user_is_current_user
   end
 
   def include_second_factor_enabled?
-    (object&.id == scope.user&.id) || scope.is_staff?
+    user_is_current_user || scope.is_admin?
   end
 
   def second_factor_enabled
@@ -89,7 +107,7 @@ class UserSerializer < UserCardSerializer
   end
 
   def include_second_factor_backup_enabled?
-    object&.id == scope.user&.id
+    user_is_current_user
   end
 
   def second_factor_backup_enabled
@@ -97,7 +115,7 @@ class UserSerializer < UserCardSerializer
   end
 
   def include_second_factor_remaining_backup_codes?
-    (object&.id == scope.user&.id) && object.backup_codes_enabled?
+    user_is_current_user && object.backup_codes_enabled?
   end
 
   def second_factor_remaining_backup_codes
@@ -105,19 +123,35 @@ class UserSerializer < UserCardSerializer
   end
 
   def can_change_bio
-    !(SiteSetting.enable_sso && SiteSetting.sso_overrides_bio)
+    !(SiteSetting.enable_discourse_connect && SiteSetting.discourse_connect_overrides_bio)
+  end
+
+  def can_change_location
+    !(SiteSetting.enable_discourse_connect && SiteSetting.discourse_connect_overrides_location)
+  end
+
+  def can_change_website
+    !(SiteSetting.enable_discourse_connect && SiteSetting.discourse_connect_overrides_website)
+  end
+
+  def can_change_tracking_preferences
+    scope.can_change_tracking_preferences?(object)
   end
 
   def user_api_keys
-    keys = object.user_api_keys.where(revoked_at: nil).map do |k|
-      {
-        id: k.id,
-        application_name: k.application_name,
-        scopes: k.scopes.map { |s| I18n.t("user_api_key.scopes.#{s}") },
-        created_at: k.created_at,
-        last_used_at: k.last_used_at,
-      }
-    end
+    keys =
+      object
+        .user_api_keys
+        .where(revoked_at: nil)
+        .map do |k|
+          {
+            id: k.id,
+            application_name: k.application_name,
+            scopes: k.scopes.map { |s| I18n.t("user_api_key.scopes.#{s.name}") },
+            created_at: k.created_at,
+            last_used_at: k.last_used_at,
+          }
+        end
 
     keys.sort! { |a, b| a[:last_used_at].to_time <=> b[:last_used_at].to_time }
     keys.length > 0 ? keys : nil
@@ -127,8 +161,21 @@ class UserSerializer < UserCardSerializer
     ActiveModel::ArraySerializer.new(
       object.user_auth_tokens,
       each_serializer: UserAuthTokenSerializer,
-      scope: scope
+      scope: scope,
     )
+  end
+
+  def user_passkeys
+    UserSecurityKey
+      .where(user_id: object.id, factor_type: UserSecurityKey.factor_types[:first_factor])
+      .order("created_at ASC")
+      .map do |usk|
+        { id: usk.id, name: usk.name, last_used: usk.last_used, created_at: usk.created_at }
+      end
+  end
+
+  def include_user_passkeys?
+    SiteSetting.enable_passkeys?
   end
 
   def bio_raw
@@ -155,6 +202,14 @@ class UserSerializer < UserCardSerializer
     scope.can_edit_name?(object)
   end
 
+  def can_upload_profile_header
+    scope.can_upload_profile_header?(object)
+  end
+
+  def can_upload_user_card_background
+    scope.can_upload_user_card_background?(object)
+  end
+
   ###
   ### STAFF ATTRIBUTES
   ###
@@ -174,36 +229,24 @@ class UserSerializer < UserCardSerializer
   ###
   ### PRIVATE ATTRIBUTES
   ###
-  def muted_tags
-    TagUser.lookup(object, :muted).joins(:tag).pluck('tags.name')
-  end
-
-  def tracked_tags
-    TagUser.lookup(object, :tracking).joins(:tag).pluck('tags.name')
-  end
-
-  def watching_first_post_tags
-    TagUser.lookup(object, :watching_first_post).joins(:tag).pluck('tags.name')
-  end
-
-  def watched_tags
-    TagUser.lookup(object, :watching).joins(:tag).pluck('tags.name')
-  end
-
   def muted_category_ids
-    CategoryUser.lookup(object, :muted).pluck(:category_id)
+    categories_with_notification_level(:muted)
+  end
+
+  def regular_category_ids
+    categories_with_notification_level(:regular)
   end
 
   def tracked_category_ids
-    CategoryUser.lookup(object, :tracking).pluck(:category_id)
+    categories_with_notification_level(:tracking)
   end
 
   def watched_category_ids
-    CategoryUser.lookup(object, :watching).pluck(:category_id)
+    categories_with_notification_level(:watching)
   end
 
   def watched_first_post_category_ids
-    CategoryUser.lookup(object, :watching_first_post).pluck(:category_id)
+    categories_with_notification_level(:watching_first_post)
   end
 
   def muted_usernames
@@ -212,6 +255,10 @@ class UserSerializer < UserCardSerializer
 
   def ignored_usernames
     IgnoredUser.where(user_id: object.id).joins(:ignored_user).pluck(:username)
+  end
+
+  def allowed_pm_usernames
+    AllowedPmUser.where(user_id: object.id).joins(:allowed_pm_user).pluck(:username)
   end
 
   def system_avatar_upload_id
@@ -270,4 +317,18 @@ class UserSerializer < UserCardSerializer
     object.profile_background_upload&.url
   end
 
+  def use_logo_small_as_avatar
+    object.is_system_user? && SiteSetting.logo_small &&
+      SiteSetting.use_site_small_logo_as_system_avatar
+  end
+
+  private
+
+  def custom_field_keys
+    fields = super
+
+    fields += DiscoursePluginRegistry.serialized_current_user_fields.to_a if scope.can_edit?(object)
+
+    fields
+  end
 end

@@ -4,7 +4,7 @@ module Jobs
   class GrantNewUserOfTheMonthBadges < ::Jobs::Scheduled
     every 1.day
 
-    MAX_AWARDED ||= 2
+    MAX_AWARDED = 2
 
     def execute(args)
       badge = Badge.find(Badge::NewUserOfTheMonth)
@@ -13,27 +13,33 @@ module Jobs
       previous_month_beginning = 1.month.ago.beginning_of_month
       previous_month_end = 1.month.ago.end_of_month
 
-      return if UserBadge.where("badge_id = ? AND granted_at BETWEEN ? AND ?",
-        badge.id, previous_month_beginning, Time.zone.now
-      ).exists?
+      if UserBadge.where(
+           "badge_id = ? AND granted_at BETWEEN ? AND ?",
+           badge.id,
+           previous_month_beginning,
+           Time.zone.now,
+         ).exists?
+        return
+      end
 
-      scores(previous_month_beginning).each do |user_id, score|
+      scores(previous_month_beginning, previous_month_end).each do |user_id, score|
         # Don't bother awarding to users who haven't received any likes
         if score > 0.0
           user = User.find(user_id)
           if user.badges.where(id: Badge::NewUserOfTheMonth).blank?
             BadgeGranter.grant(badge, user, created_at: previous_month_end)
 
-            SystemMessage.new(user).create('new_user_of_the_month',
+            SystemMessage.new(user).create(
+              "new_user_of_the_month",
               month_year: I18n.l(previous_month_beginning, format: :no_day),
-              url: "#{Discourse.base_url}/badges"
+              url: "#{Discourse.base_url}/badges",
             )
           end
         end
       end
     end
 
-    def scores(user_created_after_date)
+    def scores(min_user_created_at, max_user_created_at)
       current_owners = UserBadge.where(badge_id: Badge::NewUserOfTheMonth).pluck(:user_id)
       current_owners = [-1] if current_owners.blank?
 
@@ -65,13 +71,13 @@ module Jobs
         LEFT OUTER JOIN topics       AS t        ON t.id = p.topic_id
         WHERE u.active
           AND u.id > 0
-          AND u.id NOT IN (#{current_owners.join(',')})
+          AND u.id NOT IN (#{current_owners.join(",")})
           AND NOT u.staged
           AND NOT u.admin
           AND NOT u.moderator
           AND u.suspended_at IS NULL
           AND u.suspended_till IS NULL
-          AND u.created_at >= :min_user_created_at
+          AND u.created_at BETWEEN :min_user_created_at AND :max_user_created_at
           AND t.archetype <> '#{Archetype.private_message}'
           AND t.deleted_at IS NULL
           AND p.deleted_at IS NULL
@@ -83,8 +89,13 @@ module Jobs
         LIMIT #{MAX_AWARDED}
       SQL
 
-      Hash[*DB.query_single(sql, min_user_created_at: user_created_after_date)]
+      Hash[
+        *DB.query_single(
+          sql,
+          min_user_created_at: min_user_created_at,
+          max_user_created_at: max_user_created_at,
+        )
+      ]
     end
-
   end
 end

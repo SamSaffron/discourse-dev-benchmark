@@ -1,10 +1,8 @@
 # frozen_string_literal: true
 
-require 'rails_helper'
-
-describe Jobs::TruncateUserFlagStats do
-  fab!(:user) { Fabricate(:user) }
-  fab!(:other_user) { Fabricate(:user) }
+RSpec.describe Jobs::TruncateUserFlagStats do
+  fab!(:user) { Fabricate(:user, refresh_auto_groups: true) }
+  fab!(:other_user) { Fabricate(:user, refresh_auto_groups: true) }
 
   before do
     # We might make this a site setting eventually
@@ -17,9 +15,7 @@ describe Jobs::TruncateUserFlagStats do
   end
 
   it "raises an error without user ids" do
-    expect {
-      described_class.new.execute({})
-    }.to raise_error(Discourse::InvalidParameters)
+    expect { described_class.new.execute({}) }.to raise_error(Discourse::InvalidParameters)
   end
 
   it "does nothing if the user doesn't have enough flags" do
@@ -37,18 +33,27 @@ describe Jobs::TruncateUserFlagStats do
     p2 = Fabricate(:post, user: user)
     p3 = Fabricate(:post)
 
+    freeze_time 10.minutes.ago
     r0 = PostActionCreator.spam(user, p0).reviewable
+    freeze_time 1.minute.from_now
     r1 = PostActionCreator.spam(user, p1).reviewable
+    freeze_time 1.minute.from_now
     r2 = PostActionCreator.spam(user, p2).reviewable
+    freeze_time 1.minute.from_now
     r3 = PostActionCreator.spam(user, p3).reviewable
 
+    freeze_time 1.minute.from_now
     PostActionCreator.spam(other_user, p3).reviewable
+    freeze_time 1.minute.from_now
     PostActionCreator.spam(other_user, p2).reviewable
+    freeze_time 1.minute.from_now
     PostActionCreator.spam(other_user, p1).reviewable
+
+    unfreeze_time
 
     r0.perform(Discourse.system_user, :agree_and_keep)
     r1.perform(Discourse.system_user, :disagree)
-    r2.perform(Discourse.system_user, :ignore)
+    r2.perform(Discourse.system_user, :ignore_and_do_nothing)
     r3.perform(Discourse.system_user, :agree_and_keep)
 
     user.user_stat.reload
@@ -72,5 +77,4 @@ describe Jobs::TruncateUserFlagStats do
     expect(other_user.user_stat.flags_disagreed).to eq(1)
     expect(other_user.user_stat.flags_ignored).to eq(1)
   end
-
 end

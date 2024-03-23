@@ -12,13 +12,12 @@ module TopicsHelper
     category = topic.category
 
     if category && !category.uncategorized?
-      breadcrumb.push(url: category.url, name: category.name)
+      breadcrumb.push(url: category.url, name: category.name, color: category.color)
       while category = category.parent_category
-        breadcrumb.prepend(url: category.url, name: category.name)
+        breadcrumb.prepend(url: category.url, name: category.name, color: category.color)
       end
     end
 
     Plugin::Filter.apply(:topic_categories_breadcrumb, topic, breadcrumb)
   end
-
 end

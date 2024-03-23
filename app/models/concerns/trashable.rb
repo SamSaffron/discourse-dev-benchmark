@@ -4,29 +4,11 @@ module Trashable
   extend ActiveSupport::Concern
 
   included do
-    default_scope { where(with_deleted_scope_sql) }
+    default_scope { where(deleted_at: nil) }
+    scope :with_deleted, -> { unscope(where: :deleted_at) }
+    scope :only_deleted, -> { with_deleted.where.not(deleted_at: nil) }
 
-    # scope unscoped does not work
-    belongs_to :deleted_by, class_name: 'User'
-  end
-
-  module ClassMethods
-    def with_deleted
-      # lifted from acts_as_paranoid, works around https://github.com/rails/rails/issues/4306
-      #
-      # with this in place Post.limit(10).with_deleted, will work as expected
-      #
-      scope = self.all
-
-      # must use :send here cause predicates is protected
-      # careful with updates of this API
-      scope.where_clause.send(:predicates).delete(with_deleted_scope_sql)
-      scope
-    end
-
-    def with_deleted_scope_sql
-      all.table[:deleted_at].eq(nil).to_sql
-    end
+    belongs_to :deleted_by, class_name: "User"
   end
 
   def trashed?
@@ -52,5 +34,4 @@ module Trashable
   def trash_update(deleted_at, deleted_by_id)
     self.update_columns(deleted_at: deleted_at, deleted_by_id: deleted_by_id)
   end
-
 end

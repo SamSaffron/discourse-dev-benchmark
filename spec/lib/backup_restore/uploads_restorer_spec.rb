@@ -1,12 +1,12 @@
 # frozen_string_literal: true
+# rubocop:disable Discourse/OnlyTopLevelMultisiteSpecs
 
-require 'rails_helper'
-require_relative 'shared_context_for_backup_restore'
+require_relative "shared_context_for_backup_restore"
 
-describe BackupRestore::UploadsRestorer do
-  include_context "shared stuff"
+RSpec.describe BackupRestore::UploadsRestorer do
+  subject(:restorer) { BackupRestore::UploadsRestorer.new(logger) }
 
-  subject { BackupRestore::UploadsRestorer.new(logger) }
+  include_context "with shared backup restore context"
 
   def with_temp_uploads_directory(name: "default", with_optimized: false)
     Dir.mktmpdir do |directory|
@@ -21,21 +21,32 @@ describe BackupRestore::UploadsRestorer do
     expect_remaps(
       source_site_name: source_site_name,
       target_site_name: target_site_name,
-      metadata: metadata
+      metadata: metadata,
     )
   end
 
-  def expect_remap(source_site_name: nil, target_site_name:, metadata: [], from:, to:, &block)
+  def expect_remap(
+    source_site_name: nil,
+    target_site_name:,
+    metadata: [],
+    from:,
+    to:,
+    regex: false,
+    &block
+  )
     expect_remaps(
       source_site_name: source_site_name,
       target_site_name: target_site_name,
       metadata: metadata,
-      remaps: [{ from: from, to: to }],
+      remaps: [{ from: from, to: to, regex: regex }],
       &block
     )
   end
 
   def expect_remaps(source_site_name: nil, target_site_name:, metadata: [], remaps: [], &block)
+    regex_remaps = remaps.select { |r| r[:regex] }
+    remaps.delete_if { |r| r.delete(:regex) }
+
     source_site_name ||= metadata.find { |d| d[:name] == "db_name" }&.dig(:value) || "default"
 
     if source_site_name != target_site_name
@@ -51,10 +62,25 @@ describe BackupRestore::UploadsRestorer do
       if remaps.blank?
         DbHelper.expects(:remap).never
       else
-        DbHelper.expects(:remap).with do |from, to, args|
-          args[:excluded_tables]&.include?("backup_metadata")
-          remaps.shift == { from: from, to: to }
-        end.times(remaps.size)
+        DbHelper
+          .expects(:remap)
+          .with do |from, to, args|
+            args[:excluded_tables]&.include?("backup_metadata")
+            remaps.shift == { from: from, to: to }
+          end
+          .times(remaps.size)
+      end
+
+      if regex_remaps.blank?
+        DbHelper.expects(:regexp_replace).never
+      else
+        DbHelper
+          .expects(:regexp_replace)
+          .with do |from, to, args|
+            args[:excluded_tables]&.include?("backup_metadata")
+            regex_remaps.shift == { from: from, to: to }
+          end
+          .times(regex_remaps.size)
       end
 
       if target_site_name == "default"
@@ -67,38 +93,41 @@ describe BackupRestore::UploadsRestorer do
 
   def setup_and_restore(directory, metadata)
     metadata.each { |d| BackupMetadata.create!(d) }
-    subject.restore(directory)
+    restorer.restore(directory)
   end
 
   def uploads_path(database)
     path = File.join("uploads", database)
 
-    if Discourse.is_parallel_test?
-      path = File.join(path, ENV['TEST_ENV_NUMBER'].presence || '1')
-    end
+    path = File.join(path, "test_#{ENV["TEST_ENV_NUMBER"].presence || "0"}")
 
     "/#{path}/"
   end
 
-  context "uploads" do
+  def s3_url_regex(bucket, path)
+    Regexp.escape("//#{bucket}") +
+      %q*\.s3(?:\.dualstack\.[a-z0-9\-]+?|[.\-][a-z0-9\-]+?)?\.amazonaws\.com* + Regexp.escape(path)
+  end
+
+  describe "uploads" do
     let!(:multisite) { { name: "multisite", value: true } }
     let!(:no_multisite) { { name: "multisite", value: false } }
     let!(:source_db_name) { { name: "db_name", value: "foo" } }
-    let!(:base_url) { { name: "base_url", value: "https://www.example.com/forum" } }
-    let!(:no_cdn_url)  { { name: "cdn_url", value: nil } }
-    let!(:cdn_url)  { { name: "cdn_url", value: "https://some-cdn.example.com" } }
+    let!(:base_url) { { name: "base_url", value: "https://test.localhost/forum" } }
+    let!(:no_cdn_url) { { name: "cdn_url", value: nil } }
+    let!(:cdn_url) { { name: "cdn_url", value: "https://some-cdn.example.com" } }
     let(:target_site_name) { target_site_type == multisite ? "second" : "default" }
     let(:target_hostname) { target_site_type == multisite ? "test2.localhost" : "test.localhost" }
 
-    shared_context "no uploads" do
+    shared_examples "with no uploads" do
       it "does nothing when temporary uploads directory is missing or empty" do
         store_class.any_instance.expects(:copy_from).never
 
         Dir.mktmpdir do |directory|
-          subject.restore(directory)
+          restorer.restore(directory)
 
           FileUtils.mkdir(File.join(directory, "uploads"))
-          subject.restore(directory)
+          restorer.restore(directory)
         end
       end
     end
@@ -113,28 +142,36 @@ describe BackupRestore::UploadsRestorer do
           source_site_name: "foo",
           target_site_name: "default",
           from: "/uploads/foo/",
-          to: uploads_path("default")
+          to: uploads_path("default"),
         )
       end
     end
 
-    shared_context "restores uploads" do
+    shared_context "when restoring uploads" do
       before do
         Upload.where("id > 0").destroy_all
         Fabricate(:optimized_image)
 
         upload = Fabricate(:upload_s3)
-        post = Fabricate(:post, raw: "![#{upload.original_filename}](#{upload.short_url})")
+        post =
+          Fabricate(
+            :post,
+            raw: "![#{upload.original_filename}](#{upload.short_url})",
+            user: Fabricate(:user, refresh_auto_groups: true),
+          )
         post.link_post_uploads
 
         FileHelper.stubs(:download).returns(file_from_fixtures("logo.png"))
-        FileStore::S3Store.any_instance.stubs(:store_upload).returns do
-          File.join(
-            "//s3-upload-bucket.s3.dualstack.us-east-1.amazonaws.com",
-            target_site_type == multisite ? "/uploads/#{target_site_name}" : "",
-            "original/1X/bc975735dfc6409c1c2aa5ebf2239949bcbdbd65.png"
-          )
-        end
+        FileStore::S3Store
+          .any_instance
+          .stubs(:store_upload)
+          .returns do
+            File.join(
+              "//s3-upload-bucket.s3.dualstack.us-east-1.amazonaws.com",
+              target_site_type == multisite ? "/uploads/#{target_site_name}" : "",
+              "original/1X/bc975735dfc6409c1c2aa5ebf2239949bcbdbd65.png",
+            )
+          end
         UserAvatar.import_url_for_user("logo.png", Fabricate(:user))
       end
 
@@ -144,10 +181,11 @@ describe BackupRestore::UploadsRestorer do
         with_temp_uploads_directory do |directory, path|
           store_class.any_instance.expects(:copy_from).with(path).once
 
-          expect { subject.restore(directory) }
-            .to change { OptimizedImage.count }.by_at_most(-1)
-            .and change { Jobs::CreateAvatarThumbnails.jobs.size }.by(1)
-            .and change { Post.where(baked_version: nil).count }.by(1)
+          expect { restorer.restore(directory) }.to change { OptimizedImage.count }.by_at_most(
+            -1,
+          ).and change { Jobs::CreateAvatarThumbnails.jobs.size }.by(1).and change {
+                        Post.where(baked_version: nil).count
+                      }.by(1)
         end
       end
 
@@ -157,10 +195,11 @@ describe BackupRestore::UploadsRestorer do
         with_temp_uploads_directory(with_optimized: true) do |directory, path|
           store_class.any_instance.expects(:copy_from).with(path).once
 
-          expect { subject.restore(directory) }
-            .to change { OptimizedImage.count }.by(0)
-            .and change { Jobs::CreateAvatarThumbnails.jobs.size }.by(0)
-            .and change { Post.where(baked_version: nil).count }.by(1)
+          expect { restorer.restore(directory) }.to not_change {
+            OptimizedImage.count
+          }.and not_change { Jobs::CreateAvatarThumbnails.jobs.size }.and change {
+                        Post.where(baked_version: nil).count
+                      }.by(1)
         end
       end
     end
@@ -172,15 +211,15 @@ describe BackupRestore::UploadsRestorer do
         expect_remap(
           target_site_name: target_site_name,
           metadata: [source_site_type, base_url],
-          from: "https://www.example.com/forum",
-          to: "http://localhost"
+          from: "https://test.localhost/forum",
+          to: "http://localhost",
         )
       end
 
       it "doesn't remap when `cdn_url` in `backup_metadata` is empty" do
         expect_no_remap(
           target_site_name: target_site_name,
-          metadata: [source_site_type, no_cdn_url]
+          metadata: [source_site_type, no_cdn_url],
         )
       end
 
@@ -192,8 +231,8 @@ describe BackupRestore::UploadsRestorer do
           metadata: [source_site_type, cdn_url],
           remaps: [
             { from: "https://some-cdn.example.com/", to: "https://new-cdn.example.com/" },
-            { from: "some-cdn.example.com", to: "new-cdn.example.com" }
-          ]
+            { from: "some-cdn.example.com", to: "new-cdn.example.com" },
+          ],
         )
       end
 
@@ -206,8 +245,8 @@ describe BackupRestore::UploadsRestorer do
           metadata: [source_site_type, cdn_url],
           remaps: [
             { from: "https://some-cdn.example.com/", to: "//example.com/discourse/" },
-            { from: "some-cdn.example.com", to: "example.com" }
-          ]
+            { from: "some-cdn.example.com", to: "example.com" },
+          ],
         )
       end
     end
@@ -216,46 +255,44 @@ describe BackupRestore::UploadsRestorer do
       it "doesn't remap when `s3_base_url` in `backup_metadata` is empty" do
         expect_no_remap(
           target_site_name: target_site_name,
-          metadata: [source_site_type, s3_base_url]
+          metadata: [source_site_type, s3_base_url],
         )
       end
 
       it "doesn't remap when `s3_cdn_url` in `backup_metadata` is empty" do
         expect_no_remap(
           target_site_name: target_site_name,
-          metadata: [source_site_type, s3_cdn_url]
+          metadata: [source_site_type, s3_cdn_url],
         )
       end
     end
 
-    context "currently stored locally" do
-      before do
-        SiteSetting.enable_s3_uploads = false
-      end
+    context "when currently stored locally" do
+      before { SiteSetting.enable_s3_uploads = false }
 
       let!(:store_class) { FileStore::LocalStore }
 
-      include_context "no uploads"
-      include_context "restores uploads"
+      include_context "with no uploads"
+      include_context "when restoring uploads"
 
-      context "remaps" do
+      context "with remaps" do
         include_examples "without metadata"
 
-        context "uploads previously stored locally" do
+        context "when uploads previously stored locally" do
           let!(:s3_base_url) { { name: "s3_base_url", value: nil } }
           let!(:s3_cdn_url) { { name: "s3_cdn_url", value: nil } }
 
-          context "from regular site" do
+          context "with regular site as source" do
             let!(:source_site_type) { no_multisite }
 
-            context "to regular site" do
+            context "with regular site as target" do
               let!(:target_site_type) { no_multisite }
 
               include_examples "common remaps"
               include_examples "remaps from local storage"
             end
 
-            context "to multisite", type: :multisite do
+            context "with multisite as target", type: :multisite do
               let!(:target_site_type) { multisite }
 
               include_examples "common remaps"
@@ -263,17 +300,17 @@ describe BackupRestore::UploadsRestorer do
             end
           end
 
-          context "from multisite" do
+          context "with multisite as source" do
             let!(:source_site_type) { multisite }
 
-            context "to regular site" do
+            context "with regular site as target" do
               let!(:target_site_type) { no_multisite }
 
               include_examples "common remaps"
               include_examples "remaps from local storage"
             end
 
-            context "to multisite", type: :multisite do
+            context "with multisite as target", type: :multisite do
               let!(:target_site_type) { multisite }
 
               include_examples "common remaps"
@@ -282,8 +319,10 @@ describe BackupRestore::UploadsRestorer do
           end
         end
 
-        context "uploads previously stored on S3" do
-          let!(:s3_base_url) { { name: "s3_base_url", value: "//old-bucket.s3-us-east-1.amazonaws.com" } }
+        context "with uploads previously stored on S3" do
+          let!(:s3_base_url) do
+            { name: "s3_base_url", value: "//old-bucket.s3-us-east-1.amazonaws.com" }
+          end
           let!(:s3_cdn_url) { { name: "s3_cdn_url", value: "https://s3-cdn.example.com" } }
 
           shared_examples "regular site remaps from S3" do
@@ -291,8 +330,9 @@ describe BackupRestore::UploadsRestorer do
               expect_remap(
                 target_site_name: target_site_name,
                 metadata: [no_multisite, s3_base_url],
-                from: "//old-bucket.s3-us-east-1.amazonaws.com/",
-                to: uploads_path(target_site_name)
+                from: s3_url_regex("old-bucket", "/"),
+                to: uploads_path(target_site_name),
+                regex: true,
               )
             end
 
@@ -301,9 +341,12 @@ describe BackupRestore::UploadsRestorer do
                 target_site_name: target_site_name,
                 metadata: [no_multisite, s3_cdn_url],
                 remaps: [
-                  { from: "https://s3-cdn.example.com/", to: "//#{target_hostname}#{uploads_path(target_site_name)}" },
-                  { from: "s3-cdn.example.com", to: target_hostname }
-                ]
+                  {
+                    from: "https://s3-cdn.example.com/",
+                    to: "//#{target_hostname}#{uploads_path(target_site_name)}",
+                  },
+                  { from: "s3-cdn.example.com", to: target_hostname },
+                ],
               )
             end
           end
@@ -313,8 +356,9 @@ describe BackupRestore::UploadsRestorer do
               expect_remap(
                 target_site_name: target_site_name,
                 metadata: [source_db_name, multisite, s3_base_url],
-                from: "//old-bucket.s3-us-east-1.amazonaws.com/",
-                to: "/"
+                from: s3_url_regex("old-bucket", "/"),
+                to: "/",
+                regex: true,
               )
             end
 
@@ -324,23 +368,23 @@ describe BackupRestore::UploadsRestorer do
                 metadata: [source_db_name, multisite, s3_cdn_url],
                 remaps: [
                   { from: "https://s3-cdn.example.com/", to: "//#{target_hostname}/" },
-                  { from: "s3-cdn.example.com", to: target_hostname }
-                ]
+                  { from: "s3-cdn.example.com", to: target_hostname },
+                ],
               )
             end
           end
 
-          context "from regular site" do
+          context "with regular site as source" do
             let!(:source_site_type) { no_multisite }
 
-            context "to regular site" do
+            context "with regular site as target" do
               let!(:target_site_type) { no_multisite }
 
               include_examples "common remaps"
               include_examples "regular site remaps from S3"
             end
 
-            context "to multisite", type: :multisite do
+            context "with multisite as target", type: :multisite do
               let!(:target_site_type) { multisite }
 
               include_examples "common remaps"
@@ -348,17 +392,17 @@ describe BackupRestore::UploadsRestorer do
             end
           end
 
-          context "from multisite" do
+          context "with multisite as source" do
             let!(:source_site_type) { multisite }
 
-            context "to regular site" do
+            context "with regular site as target" do
               let!(:target_site_type) { no_multisite }
 
               include_examples "common remaps"
               include_examples "multisite remaps from S3"
             end
 
-            context "to multisite", type: :multisite do
+            context "with multisite as target", type: :multisite do
               let!(:target_site_type) { no_multisite }
 
               include_examples "common remaps"
@@ -369,37 +413,32 @@ describe BackupRestore::UploadsRestorer do
       end
     end
 
-    context "currently stored on S3" do
-      before do
-        SiteSetting.s3_upload_bucket = "s3-upload-bucket"
-        SiteSetting.s3_access_key_id = "s3-access-key-id"
-        SiteSetting.s3_secret_access_key = "s3-secret-access-key"
-        SiteSetting.enable_s3_uploads = true
-      end
+    context "when currently stored on S3" do
+      before { setup_s3 }
 
       let!(:store_class) { FileStore::S3Store }
 
-      include_context "no uploads"
-      include_context "restores uploads"
+      include_context "with no uploads"
+      include_context "when restoring uploads"
 
-      context "remaps" do
+      context "with remaps" do
         include_examples "without metadata"
 
-        context "uploads previously stored locally" do
+        context "with uploads previously stored locally" do
           let!(:s3_base_url) { { name: "s3_base_url", value: nil } }
           let!(:s3_cdn_url) { { name: "s3_cdn_url", value: nil } }
 
-          context "from regular site" do
+          context "with regular site as source" do
             let!(:source_site_type) { no_multisite }
 
-            context "to regular site" do
+            context "with regular site as target" do
               let!(:target_site_type) { no_multisite }
 
               include_examples "common remaps"
               include_examples "remaps from local storage"
             end
 
-            context "to multisite", type: :multisite do
+            context "with multisite as target", type: :multisite do
               let!(:target_site_type) { no_multisite }
 
               include_examples "common remaps"
@@ -407,17 +446,17 @@ describe BackupRestore::UploadsRestorer do
             end
           end
 
-          context "from multisite" do
+          context "with multisite as source" do
             let!(:source_site_type) { multisite }
 
-            context "to regular site" do
+            context "with regular site as target" do
               let!(:target_site_type) { no_multisite }
 
               include_examples "common remaps"
               include_examples "remaps from local storage"
             end
 
-            context "to multisite", type: :multisite do
+            context "with multisite as target", type: :multisite do
               let!(:target_site_type) { multisite }
 
               include_examples "common remaps"
@@ -426,8 +465,10 @@ describe BackupRestore::UploadsRestorer do
           end
         end
 
-        context "uploads previously stored on S3" do
-          let!(:s3_base_url) { { name: "s3_base_url", value: "//old-bucket.s3-us-east-1.amazonaws.com" } }
+        context "with uploads previously stored on S3" do
+          let!(:s3_base_url) do
+            { name: "s3_base_url", value: "//old-bucket.s3-us-east-1.amazonaws.com" }
+          end
           let!(:s3_cdn_url) { { name: "s3_cdn_url", value: "https://s3-cdn.example.com" } }
 
           shared_examples "regular site remaps from S3" do
@@ -435,21 +476,28 @@ describe BackupRestore::UploadsRestorer do
               expect_remap(
                 target_site_name: target_site_name,
                 metadata: [no_multisite, s3_base_url],
-                from: "//old-bucket.s3-us-east-1.amazonaws.com/",
-                to: uploads_path(target_site_name)
+                from: s3_url_regex("old-bucket", "/"),
+                to: uploads_path(target_site_name),
+                regex: true,
               )
             end
 
             it "remaps when `s3_cdn_url` changes" do
-              SiteSetting::Upload.expects(:s3_cdn_url).returns("https://new-s3-cdn.example.com").at_least_once
+              SiteSetting::Upload
+                .expects(:s3_cdn_url)
+                .returns("https://new-s3-cdn.example.com")
+                .at_least_once
 
               expect_remaps(
                 target_site_name: target_site_name,
                 metadata: [no_multisite, s3_cdn_url],
                 remaps: [
-                  { from: "https://s3-cdn.example.com/", to: "https://new-s3-cdn.example.com#{uploads_path(target_site_name)}" },
-                  { from: "s3-cdn.example.com", to: "new-s3-cdn.example.com" }
-                ]
+                  {
+                    from: "https://s3-cdn.example.com/",
+                    to: "https://new-s3-cdn.example.com#{uploads_path(target_site_name)}",
+                  },
+                  { from: "s3-cdn.example.com", to: "new-s3-cdn.example.com" },
+                ],
               )
             end
           end
@@ -459,22 +507,26 @@ describe BackupRestore::UploadsRestorer do
               expect_remap(
                 target_site_name: target_site_name,
                 metadata: [source_db_name, multisite, s3_base_url],
-                from: "//old-bucket.s3-us-east-1.amazonaws.com/",
-                to: "/"
+                from: s3_url_regex("old-bucket", "/"),
+                to: "/",
+                regex: true,
               )
             end
 
             context "when `s3_cdn_url` is configured" do
               it "remaps when `s3_cdn_url` changes" do
-                SiteSetting::Upload.expects(:s3_cdn_url).returns("http://new-s3-cdn.example.com").at_least_once
+                SiteSetting::Upload
+                  .expects(:s3_cdn_url)
+                  .returns("http://new-s3-cdn.example.com")
+                  .at_least_once
 
                 expect_remaps(
                   target_site_name: target_site_name,
                   metadata: [source_db_name, multisite, s3_cdn_url],
                   remaps: [
                     { from: "https://s3-cdn.example.com/", to: "//new-s3-cdn.example.com/" },
-                    { from: "s3-cdn.example.com", to: "new-s3-cdn.example.com" }
-                  ]
+                    { from: "s3-cdn.example.com", to: "new-s3-cdn.example.com" },
+                  ],
                 )
               end
             end
@@ -488,17 +540,17 @@ describe BackupRestore::UploadsRestorer do
                   metadata: [source_db_name, multisite, s3_cdn_url],
                   remaps: [
                     { from: "https://s3-cdn.example.com/", to: "//#{target_hostname}/" },
-                    { from: "s3-cdn.example.com", to: target_hostname }
-                  ]
+                    { from: "s3-cdn.example.com", to: target_hostname },
+                  ],
                 )
               end
             end
           end
 
-          context "from regular site" do
+          context "with regular site as source" do
             let!(:source_site_type) { no_multisite }
 
-            context "to regular site" do
+            context "with regular site as target" do
               let!(:target_site_name) { "default" }
               let!(:target_hostname) { "test.localhost" }
 
@@ -506,7 +558,7 @@ describe BackupRestore::UploadsRestorer do
               include_examples "regular site remaps from S3"
             end
 
-            context "to multisite", type: :multisite do
+            context "with multisite as target", type: :multisite do
               let!(:target_site_name) { "second" }
               let!(:target_hostname) { "test2.localhost" }
 
@@ -515,17 +567,17 @@ describe BackupRestore::UploadsRestorer do
             end
           end
 
-          context "from multisite" do
+          context "with multisite as source" do
             let!(:source_site_type) { multisite }
 
-            context "to regular site" do
+            context "with regular site as target" do
               let!(:target_site_type) { no_multisite }
 
               include_examples "common remaps"
               include_examples "multisite remaps from S3"
             end
 
-            context "to multisite", type: :multisite do
+            context "with multisite as target", type: :multisite do
               let!(:target_site_type) { multisite }
 
               include_examples "common remaps"
@@ -537,18 +589,39 @@ describe BackupRestore::UploadsRestorer do
     end
   end
 
+  describe ".s3_regex_string" do
+    def regex_matches(s3_base_url)
+      regex, _ = BackupRestore::UploadsRestorer.s3_regex_string(s3_base_url)
+      expect(Regexp.new(regex)).to match(s3_base_url)
+    end
+
+    it "correctly matches different S3 base URLs" do
+      regex_matches("//some-bucket.s3.amazonaws.com/")
+      regex_matches("//some-bucket.s3.us-west-2.amazonaws.com/")
+      regex_matches("//some-bucket.s3-us-west-2.amazonaws.com/")
+      regex_matches("//some-bucket.s3.dualstack.us-west-2.amazonaws.com/")
+      regex_matches("//some-bucket.s3.cn-north-1.amazonaws.com.cn/")
+
+      regex_matches("//some-bucket.s3.amazonaws.com/foo/")
+      regex_matches("//some-bucket.s3.us-east-2.amazonaws.com/foo/")
+      regex_matches("//some-bucket.s3-us-east-2.amazonaws.com/foo/")
+      regex_matches("//some-bucket.s3.dualstack.us-east-2.amazonaws.com/foo/")
+      regex_matches("//some-bucket.s3.cn-north-1.amazonaws.com.cn/foo/")
+    end
+  end
+
   it "raises an exception when the store doesn't support the copy_from method" do
     Discourse.stubs(:store).returns(Object.new)
 
     with_temp_uploads_directory do |directory|
-      expect { subject.restore(directory) }.to raise_error(BackupRestore::UploadsRestoreError)
+      expect { restorer.restore(directory) }.to raise_error(BackupRestore::UploadsRestoreError)
     end
   end
 
   it "raises an exception when there are multiple folders in the uploads directory" do
     with_temp_uploads_directory do |directory|
       FileUtils.mkdir_p(File.join(directory, "uploads", "foo"))
-      expect { subject.restore(directory) }.to raise_error(BackupRestore::UploadsRestoreError)
+      expect { restorer.restore(directory) }.to raise_error(BackupRestore::UploadsRestoreError)
     end
   end
 
@@ -557,7 +630,7 @@ describe BackupRestore::UploadsRestorer do
       source_site_name: "xylan",
       target_site_name: "default",
       from: "/uploads/xylan/",
-      to: uploads_path("default")
+      to: uploads_path("default"),
     ) do |directory|
       FileUtils.mkdir_p(File.join(directory, "uploads", "PaxHeaders.27134"))
       FileUtils.mkdir_p(File.join(directory, "uploads", ".hidden"))

@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
 class ExtraLocalesController < ApplicationController
-  layout :false
+  layout false
 
   skip_before_action :check_xhr,
-    :preload_json,
-    :redirect_to_login_if_required,
-    :verify_authenticity_token
+                     :preload_json,
+                     :redirect_to_login_if_required,
+                     :verify_authenticity_token
 
-  OVERRIDES_BUNDLE ||= 'overrides'
+  OVERRIDES_BUNDLE ||= "overrides"
   MD5_HASH_LENGTH ||= 32
 
   def show
@@ -45,7 +45,7 @@ class ExtraLocalesController < ApplicationController
   end
 
   def self.url(bundle)
-    "#{Discourse.base_uri}/extra-locales/#{bundle}?v=#{bundle_js_hash(bundle)}"
+    "#{Discourse.base_path}/extra-locales/#{bundle}?v=#{bundle_js_hash(bundle)}"
   end
 
   def self.client_overrides_exist?
@@ -71,6 +71,6 @@ class ExtraLocalesController < ApplicationController
   private
 
   def valid_bundle?(bundle)
-    bundle == OVERRIDES_BUNDLE || (bundle =~ /^(admin|wizard)$/ && current_user&.staff?)
+    bundle == OVERRIDES_BUNDLE || (bundle =~ /\A(admin|wizard)\z/ && current_user&.staff?)
   end
 end

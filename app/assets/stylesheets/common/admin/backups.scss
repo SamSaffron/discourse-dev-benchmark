@@ -4,10 +4,10 @@ $rollback: #3d9970;
 $rollback-dark: darken($rollback, 10%) !default;
 $rollback-darker: darken($rollback, 20%) !default;
 .btn-rollback {
-  color: $secondary;
+  color: var(--secondary);
   background: $rollback;
   .d-icon {
-    color: $secondary;
+    color: var(--secondary);
   }
   &:hover {
     background: $rollback-dark;
@@ -89,11 +89,8 @@ button.ru {
 }
 
 .start-backup-modal {
-  .btn {
-    margin: 10px 0 10px 5px;
-  }
-  .btn:first-of-type {
-    margin-left: 10px;
+  .alert {
+    margin-bottom: 0;
   }
 }
 
@@ -109,5 +106,8 @@ button.ru {
     @include breakpoint(mobile-extra-large) {
       margin: 1.25em 0 0;
     }
+  }
+  label {
+    font-weight: normal;
   }
 }

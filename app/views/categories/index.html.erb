@@ -1,4 +1,5 @@
 <div itemscope itemtype='http://schema.org/ItemList'>
+  <meta itemprop='itemListOrder' content='http://schema.org/ItemListOrderDescending'>
   <table class='category-list'>
     <thead>
       <tr>
@@ -7,7 +8,6 @@
       </tr>
     </thead>
     <tbody>
-      <meta itemprop='itemListOrder' content='http://schema.org/ItemListOrderDescending'>
       <% @category_list.categories.each_with_index do |c, index| %>
         <tr>
           <td class='category' style='border-color: #<%= c.color %>;'>
@@ -20,6 +20,13 @@
                 </a>
               </h3>
               <div itemprop='description'><%= c.description&.html_safe %></div>
+              <% if c.subcategory_list.present? %>
+                <div class='subcategories'>
+                  <% c.subcategory_list.each_with_index do |sc, index| %>
+                    <a href='<%= sc.url %>'><%= sc.name %></a>&nbsp;
+                  <% end %>
+                </div>
+              <% end %>
             </div>
           </td>
           <td class='topics'>

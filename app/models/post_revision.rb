@@ -40,6 +40,16 @@ class PostRevision < ActiveRecord::Base
     PostActionNotifier.after_create_post_revision(self)
   end
 
+  def self.copy(original_post, target_post)
+    cols_to_copy = (column_names - %w[id post_id]).join(", ")
+
+    DB.exec <<~SQL
+    INSERT INTO post_revisions(post_id, #{cols_to_copy})
+    SELECT #{target_post.id}, #{cols_to_copy}
+    FROM post_revisions
+    WHERE post_id = #{original_post.id}
+    SQL
+  end
 end
 
 # == Schema Information
@@ -59,4 +69,4 @@ end
 #
 #  index_post_revisions_on_post_id             (post_id)
 #  index_post_revisions_on_post_id_and_number  (post_id,number)
-#
+#  index_post_revisions_on_user_id             (user_id)

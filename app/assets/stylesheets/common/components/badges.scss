@@ -15,9 +15,11 @@
 // Category badges
 // --------------------------------------------------
 
-.badge-wrapper {
-  font-size: $font-down-1;
-  font-weight: bold;
+.badge-category__wrapper {
+  color: var(--primary-high);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--font-down-1);
   white-space: nowrap;
   position: relative;
   display: inline-flex;
@@ -26,136 +28,42 @@
   .badge-category {
     display: inline-flex;
     align-items: baseline;
-    .category-name {
-      text-overflow: ellipsis;
-      overflow: hidden;
-    }
-    .d-icon {
-      margin-right: 3px;
-      width: 0.74em;
-      height: 0.74em;
-      color: inherit;
-    }
-  }
+    gap: 0.33em;
+    color: var(--primary-high);
 
-  // ----- Bullet
-
-  &.bullet {
-    margin-right: 12px;
-    span.badge-category {
-      color: $primary-high;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      .extra-info-wrapper & {
-        color: $header-primary;
-      }
-    }
-    .badge-category-parent-bg,
-    .badge-category-bg {
+    &:before {
+      content: "";
+      background: var(--category-badge-color);
       flex: 0 0 auto;
-      width: 9px;
-      height: 9px;
-      margin-right: 5px;
-      display: inline-block;
+      width: 0.67rem; // fixed dimensions because otherwise they may not be square
+      height: 0.67rem;
     }
-    .badge-category-parent-bg {
-      // Subcategories
-      width: 5px;
-      margin-right: 0;
-      + .badge-category-bg {
-        width: 5px;
-      }
-    }
-    .d-icon {
-      color: $primary-medium;
-    }
-  }
 
-  // ----- Box
-
-  &.box {
-    margin-right: 5px;
-    padding: 2px 4px 2px 4px;
-    display: inline-flex;
-    span {
-      overflow: hidden;
+    &__name {
+      color: currentColor;
       text-overflow: ellipsis;
-      &.badge-category-bg,
-      &.badge-category-parent-bg {
-        position: absolute;
-        top: 0;
-        right: 0;
-        bottom: 0;
-        left: 0;
-      }
-
-      &.badge-category-parent-bg {
-        // Subcategories
-        width: calc(100% - 5px);
-        & + .badge-category-bg {
-          left: 5px;
-          width: calc(100% - 5px);
-          & + .badge-category {
-            margin-left: 5px;
-          }
-        }
-      }
-
-      &.badge-category {
-        position: relative;
-      }
-    }
-    + .topic-header-extra {
-      padding: 2px 4px 2px 4px;
-    }
-  }
-
-  // ----- Bar
-
-  &.bar {
-    margin-right: 5px;
-
-    span.badge-category {
-      color: $primary-high;
-      padding: 1px 3px;
       overflow: hidden;
-      text-overflow: ellipsis;
-
-      .extra-info-wrapper & {
-        color: $header-primary;
-      }
     }
 
-    .badge-category-parent-bg,
-    .badge-category-bg {
-      // Subcategories
-      display: inline-block;
-      padding: 0 1px;
-
+    &.--has-parent {
       &:before {
-        content: "\a0";
+        background: linear-gradient(
+          90deg,
+          var(--parent-category-badge-color) 50%,
+          var(--category-badge-color) 50%
+        );
       }
     }
-  }
 
-  // ----- No category style
-
-  &.none {
-    color: $primary-high;
-    margin-right: 5px;
-  }
-}
-
-// Category badge dropdown
-// --------------------------------------------------
-
-.list-controls {
-  .category-breadcrumb {
-    a.badge-category {
-      display: inline-block;
-      padding: 6px 8px;
-      line-height: $line-height-medium;
+    .extra-info-wrapper & {
+      color: var(--header_primary-high);
     }
+  }
+
+  .d-icon {
+    width: 0.74em;
+    height: 0.74em;
+    color: var(--primary-medium);
   }
 }
 
@@ -164,49 +72,52 @@
 
 .badge-notification {
   @extend %badge;
+  position: relative;
+  top: -2px;
   padding: 0.21em 0.42em;
   min-width: 0.5em;
-  color: $secondary;
-  font-size: $font-down-2;
-  line-height: $line-height-small;
+  color: var(--secondary);
+  font-size: var(--font-down-2);
+  line-height: var(--line-height-small);
   text-align: center;
-  background-color: dark-light-choose($primary-low-mid, $secondary-low);
+  background-color: var(--primary-low-mid-or-secondary-low);
   &[href] {
-    color: $secondary;
+    color: var(--secondary);
   }
 
   &:hover {
-    color: $secondary;
+    color: var(--secondary);
   }
 
-  // New posts
+  // Unread posts
 
-  &.new-posts,
   &.unread-posts {
-    background-color: dark-light-choose($tertiary-medium, $tertiary);
-    color: dark-light-choose($secondary, $secondary);
+    background-color: var(--tertiary-med-or-tertiary);
+    color: var(--secondary);
     font-weight: dark-light-choose(normal, bold);
   }
 
   &.new-topic {
     background-color: transparent;
-    color: $tertiary-high;
-    font-weight: normal;
-    font-size: $font-down-1;
+    padding-left: 0.15em;
   }
 
   &.new-topic::before {
-    content: "●";
-    margin-right: 2px;
+    content: "";
+    background: var(--tertiary-med-or-tertiary);
+    display: inline-block;
+    height: 8px;
+    width: 8px;
+    border-radius: 50%;
   }
 
   // Click count
 
   &.clicks {
     font-weight: normal;
-    background-color: $primary-low;
+    background-color: var(--primary-low);
     top: -1px;
-    color: $primary-medium;
+    color: var(--primary-medium);
     position: relative;
     border: none;
   }
@@ -217,10 +128,10 @@
 
 .badge-posts {
   font-weight: normal;
-  font-size: $font-0;
-  line-height: $line-height-small;
+  font-size: var(--font-0);
+  line-height: var(--line-height-small);
   &[href] {
-    color: dark-light-choose($primary-medium, $secondary-medium);
+    color: var(--primary-med-or-secondary-med);
   }
 }
 
@@ -230,8 +141,8 @@
 .badge-group {
   @extend %badge;
   padding: 2px 5px;
-  color: $primary;
-  background-color: $primary-low;
-  border-color: $primary-low;
-  font-size: $font-down-1;
+  color: var(--primary);
+  background-color: var(--primary-low);
+  border-color: var(--primary-low);
+  font-size: var(--font-down-1);
 }

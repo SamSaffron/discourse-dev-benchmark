@@ -1,101 +1,108 @@
 # frozen_string_literal: true
 
-require 'rails_helper'
-
 RSpec.describe TopicTimer, type: :model do
-  let(:topic_timer) {
-    # we should not need to do this but somehow
-    # fabricator is failing here
-    TopicTimer.create!(
-      user_id: -1,
-      topic: Fabricate(:topic),
-      execute_at: 1.hour.from_now,
-      status_type: TopicTimer.types[:close]
-    )
-  }
-  fab!(:topic) { Fabricate(:topic) }
-  fab!(:admin) { Fabricate(:admin) }
+  fab!(:topic_timer)
+  fab!(:topic)
+  fab!(:admin)
 
-  before do
-    freeze_time Time.new(2018)
-  end
+  before { freeze_time }
 
-  context "validations" do
-    describe '#status_type' do
-      it 'should ensure that only one active public topic status update exists' do
-        topic_timer.update!(topic: topic)
-        Fabricate(:topic_timer, deleted_at: Time.zone.now, topic: topic)
-
-        expect { Fabricate(:topic_timer, topic: topic) }
-          .to raise_error(ActiveRecord::RecordInvalid)
+  describe "Validations" do
+    describe "pending_timers scope" do
+      it "does not return deleted timers" do
+        topic_timer.trash!
+        expect(TopicTimer.pending_timers.pluck(:id)).not_to include(topic_timer.id)
       end
 
-      it 'should ensure that only one active private topic timer exists per user' do
-        Fabricate(:topic_timer, topic: topic, user: admin, status_type: TopicTimer.types[:reminder])
-
-        expect { Fabricate(:topic_timer, topic: topic, user: admin, status_type: TopicTimer.types[:reminder]) }
-          .to raise_error(ActiveRecord::RecordInvalid)
+      it "does not return timers in the future of the provided before time" do
+        topic_timer.update!(execute_at: 3.days.from_now)
+        expect(TopicTimer.pending_timers.pluck(:id)).not_to include(topic_timer.id)
+        expect(TopicTimer.pending_timers(2.days.from_now).pluck(:id)).not_to include(topic_timer.id)
+        topic_timer.update!(execute_at: 1.minute.ago, created_at: 10.minutes.ago)
+        expect(TopicTimer.pending_timers.pluck(:id)).to include(topic_timer.id)
       end
 
-      it 'should allow users to have their own private topic timer' do
-        expect do
-          Fabricate(:topic_timer,
-            topic: topic,
-            user: Fabricate(:admin),
-            status_type: TopicTimer.types[:reminder]
+      describe "duration values" do
+        it "does not allow durations <= 0" do
+          topic_timer.duration_minutes = -1
+          topic_timer.save
+          expect(topic_timer.errors.full_messages.first).to include(
+            "Duration minutes must be greater than 0.",
           )
-        end.to_not raise_error
+        end
+
+        it "does not allow crazy big durations (20 years in minutes)" do
+          topic_timer.duration_minutes = 21.years.to_i / 60
+          topic_timer.save
+          expect(topic_timer.errors.full_messages.first).to include(
+            "Duration minutes cannot be more than 20 years.",
+          )
+        end
       end
     end
 
-    describe '#execute_at' do
-      describe 'when #execute_at is greater than #created_at' do
-        it 'should be valid' do
-          topic_timer = Fabricate.build(:topic_timer,
-            execute_at: Time.zone.now + 1.hour,
-            user: Fabricate(:user),
-            topic: Fabricate(:topic)
-          )
+    describe "#status_type" do
+      it "should ensure that only one active public topic status update exists" do
+        topic_timer.update!(topic: topic)
+        Fabricate(:topic_timer, deleted_at: Time.zone.now, topic: topic)
+
+        expect { Fabricate(:topic_timer, topic: topic) }.to raise_error(ActiveRecord::RecordInvalid)
+      end
+    end
+
+    describe "#execute_at" do
+      describe "when #execute_at is greater than #created_at" do
+        it "should be valid" do
+          topic_timer =
+            Fabricate.build(
+              :topic_timer,
+              execute_at: Time.zone.now + 1.hour,
+              user: Fabricate(:user),
+              topic: Fabricate(:topic),
+            )
 
           expect(topic_timer).to be_valid
         end
       end
 
-      describe 'when #execute_at is smaller than #created_at' do
-        it 'should not be valid' do
-          topic_timer = Fabricate.build(:topic_timer,
-            execute_at: Time.zone.now - 1.hour,
-            created_at: Time.zone.now,
-            user: Fabricate(:user),
-            topic: Fabricate(:topic)
-          )
+      describe "when #execute_at is smaller than #created_at" do
+        it "should not be valid" do
+          topic_timer =
+            Fabricate.build(
+              :topic_timer,
+              execute_at: Time.zone.now - 1.hour,
+              created_at: Time.zone.now,
+              user: Fabricate(:user),
+              topic: Fabricate(:topic),
+            )
 
           expect(topic_timer).to_not be_valid
         end
       end
     end
 
-    describe '#category_id' do
-      describe 'when #status_type is publish_to_category' do
-        describe 'when #category_id is not present' do
-          it 'should not be valid' do
-            topic_timer = Fabricate.build(:topic_timer,
-              status_type: TopicTimer.types[:publish_to_category]
-            )
+    describe "#category_id" do
+      describe "when #status_type is publish_to_category" do
+        describe "when #category_id is not present" do
+          it "should not be valid" do
+            topic_timer =
+              Fabricate.build(:topic_timer, status_type: TopicTimer.types[:publish_to_category])
 
             expect(topic_timer).to_not be_valid
             expect(topic_timer.errors).to include(:category_id)
           end
         end
 
-        describe 'when #category_id is present' do
-          it 'should be valid' do
-            topic_timer = Fabricate.build(:topic_timer,
-              status_type: TopicTimer.types[:publish_to_category],
-              category_id: Fabricate(:category).id,
-              user: Fabricate(:user),
-              topic: Fabricate(:topic)
-            )
+        describe "when #category_id is present" do
+          it "should be valid" do
+            topic_timer =
+              Fabricate.build(
+                :topic_timer,
+                status_type: TopicTimer.types[:publish_to_category],
+                category_id: Fabricate(:category).id,
+                user: Fabricate(:user),
+                topic: Fabricate(:topic),
+              )
 
             expect(topic_timer).to be_valid
           end
@@ -104,143 +111,45 @@ RSpec.describe TopicTimer, type: :model do
     end
   end
 
-  context 'callbacks' do
-    describe 'when #execute_at and #user_id are not changed' do
-      it 'should not schedule another to update topic' do
-        Jobs.expects(:enqueue_at).with(
-          topic_timer.execute_at,
-          :toggle_topic_closed,
-          topic_timer_id: topic_timer.id,
-          state: true
-        ).once
-
-        topic_timer
-
-        Jobs.expects(:cancel_scheduled_job).never
+  describe "Callbacks" do
+    describe "when #execute_at and #user_id are not changed" do
+      it "should not schedule another to update topic" do
+        Jobs.expects(:enqueue_at).never
 
         topic_timer.update!(topic: Fabricate(:topic))
       end
     end
 
-    describe 'when #execute_at value is changed' do
-      it 'reschedules the job' do
-        freeze_time
-        topic_timer
-
-        Jobs.expects(:cancel_scheduled_job).with(
-          :toggle_topic_closed, topic_timer_id: topic_timer.id
-        )
-
-        Jobs.expects(:enqueue_at).with(
-          3.days.from_now, :toggle_topic_closed,
-          topic_timer_id: topic_timer.id,
-          state: true
-        )
-
-        topic_timer.update!(execute_at: 3.days.from_now, created_at: Time.zone.now)
-      end
-
-      describe 'when execute_at is smaller than the current time' do
-        it 'should enqueue the job immediately' do
-          freeze_time
-          topic_timer
-
-          Jobs.expects(:enqueue_at).with(
-            Time.zone.now, :toggle_topic_closed,
-            topic_timer_id: topic_timer.id,
-            state: true
-          )
-
-          topic_timer.update!(
-            execute_at: Time.zone.now - 1.hour,
-            created_at: Time.zone.now - 2.hour
-          )
-        end
-      end
-    end
-
-    describe 'when user is changed' do
-      it 'should update the job' do
-        freeze_time
-        topic_timer
-
-        Jobs.expects(:cancel_scheduled_job).with(
-          :toggle_topic_closed, topic_timer_id: topic_timer.id
-        )
-
-        admin = Fabricate(:admin)
-
-        Jobs.expects(:enqueue_at).with(
-          topic_timer.execute_at,
-          :toggle_topic_closed,
-          topic_timer_id: topic_timer.id,
-          state: true
-        )
-
-        topic_timer.update!(user: admin)
-      end
-    end
-
-    describe 'when a open topic status update is created for an open topic' do
+    describe "when a open topic status update is created for an open topic" do
       fab!(:topic) { Fabricate(:topic, closed: false) }
-
-      let(:topic_timer) do
-        Fabricate(:topic_timer,
-          status_type: described_class.types[:open],
-          topic: topic
-        )
+      fab!(:topic_timer) do
+        Fabricate(:topic_timer, status_type: described_class.types[:open], topic: topic)
       end
 
-      before do
-        Jobs.run_immediately!
-      end
+      before { Jobs.run_immediately! }
 
-      it 'should close the topic' do
-        topic_timer
+      it "should close the topic" do
+        topic_timer.send(:schedule_auto_open_job)
         expect(topic.reload.closed).to eq(true)
       end
-
-      describe 'when topic has been deleted' do
-        it 'should not queue the job' do
-          topic.trash!
-          topic_timer
-
-          expect(Jobs::ToggleTopicClosed.jobs).to eq([])
-        end
-      end
     end
 
-    describe 'when a close topic status update is created for a closed topic' do
+    describe "when a close topic status update is created for a closed topic" do
       fab!(:topic) { Fabricate(:topic, closed: true) }
-
-      let(:topic_timer) do
-        Fabricate(:topic_timer,
-          status_type: described_class.types[:close],
-          topic: topic
-        )
+      fab!(:topic_timer) do
+        Fabricate(:topic_timer, status_type: described_class.types[:close], topic: topic)
       end
 
-      before do
-        Jobs.run_immediately!
-      end
+      before { Jobs.run_immediately! }
 
-      it 'should open the topic' do
-        topic_timer
+      it "should open the topic" do
+        topic_timer.send(:schedule_auto_close_job)
         expect(topic.reload.closed).to eq(false)
       end
-
-      describe 'when topic has been deleted' do
-        it 'should not queue the job' do
-          topic.trash!
-          topic_timer
-
-          expect(Jobs::ToggleTopicClosed.jobs).to eq([])
-        end
-      end
     end
 
-    describe '#public_type' do
-      [:close, :open, :delete].each do |public_type|
+    describe "#public_type" do
+      %i[close open delete].each do |public_type|
         it "is true for #{public_type}" do
           timer = Fabricate(:topic_timer, status_type: described_class.types[public_type])
           expect(timer.public_type).to eq(true)
@@ -248,7 +157,12 @@ RSpec.describe TopicTimer, type: :model do
       end
 
       it "is true for publish_to_category" do
-        timer = Fabricate(:topic_timer, status_type: described_class.types[:publish_to_category], category: Fabricate(:category))
+        timer =
+          Fabricate(
+            :topic_timer,
+            status_type: described_class.types[:publish_to_category],
+            category: Fabricate(:category),
+          )
         expect(timer.public_type).to eq(true)
       end
 
@@ -261,61 +175,44 @@ RSpec.describe TopicTimer, type: :model do
     end
   end
 
-  describe '.ensure_consistency!' do
-    it 'should enqueue jobs that have been missed' do
-      close_topic_timer = Fabricate(:topic_timer,
-        execute_at: Time.zone.now - 1.hour,
-        created_at: Time.zone.now - 2.hour
-      )
+  describe "runnable?" do
+    it "returns false if execute_at > now" do
+      topic_timer =
+        Fabricate.build(
+          :topic_timer,
+          execute_at: Time.zone.now + 1.hour,
+          user: Fabricate(:user),
+          topic: Fabricate(:topic),
+        )
 
-      open_topic_timer = Fabricate(:topic_timer,
-        status_type: described_class.types[:open],
-        execute_at: Time.zone.now - 1.hour,
-        created_at: Time.zone.now - 2.hour,
-        topic: Fabricate(:topic, closed: true)
-      )
-
-      Fabricate(:topic_timer, execute_at: Time.zone.now + 1.hour)
-
-      Fabricate(:topic_timer,
-        execute_at: Time.zone.now - 1.hour,
-        created_at: Time.zone.now - 2.hour
-      ).topic.trash!
-
-      # creating topic timers already enqueues jobs
-      # let's delete them to test ensure_consistency!
-      Sidekiq::Worker.clear_all
-
-      expect { described_class.ensure_consistency! }
-        .to change { Jobs::ToggleTopicClosed.jobs.count }.by(2)
-
-      job_args = Jobs::ToggleTopicClosed.jobs.first["args"].first
-
-      expect(job_args["topic_timer_id"]).to eq(close_topic_timer.id)
-      expect(job_args["state"]).to eq(true)
-
-      job_args = Jobs::ToggleTopicClosed.jobs.last["args"].first
-
-      expect(job_args["topic_timer_id"]).to eq(open_topic_timer.id)
-      expect(job_args["state"]).to eq(false)
+      expect(topic_timer.runnable?).to eq(false)
     end
 
-    it "should enqueue remind me jobs that have been missed" do
-      reminder = Fabricate(:topic_timer,
-        status_type: described_class.types[:reminder],
-        execute_at: Time.zone.now - 1.hour,
-        created_at: Time.zone.now - 2.hour
-      )
+    it "returns false if timer is deleted" do
+      topic_timer =
+        Fabricate.create(
+          :topic_timer,
+          execute_at: Time.zone.now - 1.hour,
+          created_at: Time.zone.now - 2.hour,
+          user: Fabricate(:user),
+          topic: Fabricate(:topic),
+        )
+      topic_timer.trash!
 
-      # creating topic timers already enqueues jobs
-      # let's delete them to test ensure_consistency!
-      Sidekiq::Worker.clear_all
+      expect(topic_timer.runnable?).to eq(false)
+    end
 
-      expect { described_class.ensure_consistency! }
-        .to change { Jobs::TopicReminder.jobs.count }.by(1)
+    it "returns true if execute_at < now" do
+      topic_timer =
+        Fabricate.build(
+          :topic_timer,
+          execute_at: Time.zone.now - 1.hour,
+          created_at: Time.zone.now - 2.hour,
+          user: Fabricate(:user),
+          topic: Fabricate(:topic),
+        )
 
-      job_args = Jobs::TopicReminder.jobs.first["args"].first
-      expect(job_args["topic_timer_id"]).to eq(reminder.id)
+      expect(topic_timer.runnable?).to eq(true)
     end
   end
 end

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 module Jobs
-
   # This job will run on a regular basis to update statistics and denormalized data.
   # If it does not run, the site will not function properly.
   class Weekly < ::Jobs::Scheduled
@@ -12,9 +11,9 @@ module Jobs
       MiniScheduler::Stat.purge_old
       Draft.cleanup!
       UserAuthToken.cleanup!
-      Upload.reset_unknown_extensions!
       Email::Cleaner.delete_rejected!
       Notification.purge_old!
+      Bookmark.cleanup!
     end
   end
 end

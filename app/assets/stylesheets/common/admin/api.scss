@@ -53,7 +53,7 @@ table.api-keys {
   }
 
   tr.revoked {
-    color: $primary-medium;
+    color: var(--primary-medium);
   }
 
   @include breakpoint(tablet) {
@@ -92,31 +92,83 @@ table.api-keys {
   h2 {
     margin-bottom: 10px;
   }
-  .api-key {
-    padding: 10px;
-    margin-bottom: 10px;
-    border-bottom: 1px solid $primary-low;
+  .api-key-new {
     .form-element,
     .form-element-desc {
-      float: left;
-      padding: 0.5em 0;
+      &.input-area {
+        width: 100%;
+
+        .value-list,
+        .select-kit,
+        input[type="text"],
+        input[type="text"].filter-input {
+          width: 100%;
+          margin: 0;
+        }
+
+        @include breakpoint(mobile-extra-large, min-width) {
+          width: 75%;
+          .value-list,
+          .select-kit,
+          input[type="text"] {
+            width: 50%;
+          }
+        }
+      }
+      &.label-area {
+        label {
+          margin: 0.5em 1em 0 0;
+        }
+        @include breakpoint(mobile-extra-large, min-width) {
+          width: 25%;
+        }
+      }
+    }
+  }
+  .api-key-show {
+    .form-element,
+    .form-element-desc {
       &.input-area {
         width: 75%;
+
+        @include breakpoint(mobile-medium) {
+          width: 100%;
+        }
+
         .value-list,
         .select-kit,
         input[type="text"] {
           width: 50%;
           margin: 0;
         }
+      }
+      &.label-area {
+        width: 25%;
+        label {
+          margin-right: 1em;
+        }
+      }
+    }
+  }
+
+  .api-key {
+    padding: 10px;
+    margin-bottom: 10px;
+    .form-element,
+    .form-element-desc {
+      float: left;
+      padding: 0.5em 0;
+      &.input-area {
+        input[type="checkbox"] {
+          margin-top: 0.5em;
+        }
         .ac-wrap {
           width: 50% !important;
         }
       }
       &.label-area {
-        width: 25%;
         label {
-          margin: 0.5em 1em 0 0;
-          text-align: right;
+          text-align: left;
           font-weight: bold;
         }
       }
@@ -125,6 +177,42 @@ table.api-keys {
       float: right;
       text-align: left;
       width: 50%;
+    }
+    .scopes-title {
+      margin-top: 20px;
+    }
+  }
+  .scopes-table.grid {
+    margin: 20px 0;
+
+    tr {
+      grid-template-columns: repeat(4, 1fr);
+      input {
+        margin-bottom: 2px;
+      }
+
+      @include breakpoint(mobile-large) {
+        grid-template-columns: repeat(2, 1fr);
+        grid-row-gap: 0.5em;
+
+        &.scope-resource-name {
+          grid-row-gap: 0;
+        }
+      }
+    }
+
+    .scope-resource-name {
+      font-size: var(--font-up-1);
+    }
+
+    .scope-tooltip {
+      font-size: var(--font-down-1);
+    }
+
+    .scope-name {
+      font-weight: bold;
+      font-size: var(--font-0);
+      display: inline;
     }
   }
 }
@@ -135,7 +223,7 @@ table.api-keys {
     display: none;
   }
   input {
-    max-width: calc(100% - 10px;);
+    max-width: calc(100% - 10px);
   }
   .select-kit,
   .select-kit.multi-select {
@@ -144,9 +232,15 @@ table.api-keys {
   }
 
   .event-selector {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto auto;
     margin: 0.5em 0;
+    margin-left: 1.5em;
+
+    .event-group {
+      display: inline-block;
+      margin-bottom: 1em;
+    }
 
     .hook-event {
       margin-bottom: 0.5em;
@@ -158,12 +252,10 @@ table.api-keys {
 
   > p {
     padding-bottom: 10px;
-    border-bottom: $primary-low 1px solid;
+    border-bottom: var(--primary-low) 1px solid;
   }
   .filters {
-    margin: 5px 0;
-    padding-bottom: 5px;
-    border-bottom: $primary-low 1px solid;
+    border-bottom: var(--primary-low) 1px solid;
     .filter {
       margin-bottom: 1em;
     }
@@ -174,18 +266,31 @@ table.api-keys {
   .instructions {
     margin-top: 5px;
   }
+
   .subscription-choice {
     margin-bottom: 10px;
+
+    label {
+      display: inline-block;
+    }
   }
 }
 
-.web-hook-direction {
-  button {
-    margin-right: 10px;
-  }
+.admin-webhooks__summary {
+  margin-bottom: 1rem;
+}
+
+.admin-webhooks__edit-button,
+.admin-webhooks__delete-button {
+  font-size: var(--font-0-rem);
 }
 
 .web-hook-events {
+  .heading-container {
+    width: 100%;
+    background-color: var(--primary-low);
+  }
+
   li {
     padding: 2px 0;
   }
@@ -195,6 +300,13 @@ table.api-keys {
     vertical-align: top;
     overflow-y: auto;
     overflow-x: hidden;
+  }
+  .col.heading {
+    font-weight: bold;
+    padding: 4px 0;
+  }
+  .col.heading.actions {
+    padding: 4px 0;
   }
   .col.first {
     width: 90px;
@@ -209,38 +321,36 @@ table.api-keys {
     width: 250px;
   }
   .col.actions {
-    width: 455px;
     padding-top: 0;
     a {
       text-decoration: underline;
     }
   }
-  .col.heading.actions {
-    padding: 4px 0;
-  }
   .details {
     display: block;
-    margin-top: 10px;
+    margin-top: 1rem;
   }
   label {
-    font-size: $font-0;
+    font-size: var(--font-0);
   }
   &.content-list {
     width: 100%;
   }
 }
 
+.webhook-events__ping-button {
+  margin-bottom: 1rem;
+}
+
 .web-hook-events-listing {
-  margin-top: 15px;
   .alert {
-    margin: 15px 0 0 0;
+    margin: 0;
   }
 }
 
 .hook-event {
   display: inline-block;
-  width: 40%;
-  margin-left: 20px;
+  width: 100%;
   label {
     display: inline-block;
   }

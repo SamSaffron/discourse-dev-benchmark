@@ -3,10 +3,12 @@
 module ImportScripts::PhpBB3
   class SmileyProcessor
     # @param uploader [ImportScripts::Uploader]
+    # @param database [ImportScripts::PhpBB3::Database_3_0 | ImportScripts::PhpBB3::Database_3_1]
     # @param settings [ImportScripts::PhpBB3::Settings]
     # @param phpbb_config [Hash]
-    def initialize(uploader, settings, phpbb_config)
+    def initialize(uploader, database, settings, phpbb_config)
       @uploader = uploader
+      @database = database
       @smilies_path = File.join(settings.base_dir, phpbb_config[:smilies_path])
 
       @smiley_map = {}
@@ -16,12 +18,17 @@ module ImportScripts::PhpBB3
 
     def replace_smilies(text)
       # :) is encoded as <!-- s:) --><img src="{SMILIES_PATH}/icon_e_smile.gif" alt=":)" title="Smile" /><!-- s:) -->
-      text.gsub!(/<!-- s(\S+) --><img src="\{SMILIES_PATH\}\/(.+?)" alt="(.*?)" title="(.*?)" \/><!-- s(?:\S+) -->/) do
-        smiley = $1
+      text.gsub!(
+        /<!-- s(\S+) --><img src="\{SMILIES_PATH\}\/.+?" alt=".*?" title=".*?" \/><!-- s?\S+ -->/,
+      ) { emoji($1) }
+    end
 
-        @smiley_map.fetch(smiley) do
-          upload_smiley(smiley, $2, $3, $4) || smiley_as_text(smiley)
-        end
+    def emoji(smiley_code)
+      @smiley_map.fetch(smiley_code) do
+        smiley = @database.get_smiley(smiley_code)
+        emoji =
+          upload_smiley(smiley_code, smiley[:smiley_url], smiley_code, smiley[:emotion]) if smiley
+        emoji || smiley_as_text(smiley_code)
       end
     end
 
@@ -29,37 +36,34 @@ module ImportScripts::PhpBB3
 
     def add_default_smilies
       {
-        [':D', ':-D', ':grin:'] => ':smiley:',
-        [':)', ':-)', ':smile:'] => ':slight_smile:',
-        [';)', ';-)', ':wink:'] => ':wink:',
-        [':(', ':-(', ':sad:'] => ':frowning:',
-        [':o', ':-o', ':eek:'] => ':astonished:',
-        [':shock:'] => ':open_mouth:',
-        [':?', ':-?', ':???:'] => ':confused:',
-        ['8-)', ':cool:'] => ':sunglasses:',
-        [':lol:'] => ':laughing:',
-        [':x', ':-x', ':mad:'] => ':angry:',
-        [':P', ':-P', ':razz:'] => ':stuck_out_tongue:',
-        [':oops:'] => ':blush:',
-        [':cry:'] => ':cry:',
-        [':evil:'] => ':imp:',
-        [':twisted:'] => ':smiling_imp:',
-        [':roll:'] => ':unamused:',
-        [':!:'] => ':exclamation:',
-        [':?:'] => ':question:',
-        [':idea:'] => ':bulb:',
-        [':arrow:'] => ':arrow_right:',
-        [':|', ':-|'] => ':neutral_face:',
-        [':geek:'] => ':nerd:'
-      }.each do |smilies, emoji|
-        smilies.each { |smiley| @smiley_map[smiley] = emoji }
-      end
+        %w[:D :-D :grin:] => ":smiley:",
+        %w[:) :-) :smile:] => ":slight_smile:",
+        %w[;) ;-) :wink:] => ":wink:",
+        %w[:( :-( :sad:] => ":frowning:",
+        %w[:o :-o :eek:] => ":astonished:",
+        [":shock:"] => ":open_mouth:",
+        %w[:? :-? :???:] => ":confused:",
+        %w[8) 8-) :cool:] => ":sunglasses:",
+        [":lol:"] => ":laughing:",
+        %w[:x :-x :mad:] => ":angry:",
+        %w[:P :-P :razz:] => ":stuck_out_tongue:",
+        [":oops:"] => ":blush:",
+        [":cry:"] => ":cry:",
+        [":evil:"] => ":imp:",
+        [":twisted:"] => ":smiling_imp:",
+        [":roll:"] => ":unamused:",
+        [":!:"] => ":exclamation:",
+        [":?:"] => ":question:",
+        [":idea:"] => ":bulb:",
+        [":arrow:"] => ":arrow_right:",
+        %w[:| :-|] => ":neutral_face:",
+        [":geek:"] => ":nerd:",
+      }.each { |smilies, emoji| smilies.each { |smiley| @smiley_map[smiley] = emoji } }
     end
 
     def add_configured_smilies(emojis)
       emojis.each do |emoji, smilies|
-        Array.wrap(smilies)
-          .each { |smiley| @smiley_map[smiley] = ":#{emoji}:" }
+        Array.wrap(smilies).each { |smiley| @smiley_map[smiley] = ":#{emoji}:" }
       end
     end
 

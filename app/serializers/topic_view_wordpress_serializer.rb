@@ -1,18 +1,18 @@
 # frozen_string_literal: true
 
 class TopicViewWordpressSerializer < ApplicationSerializer
-
   # These attributes will be delegated to the topic
-  attributes :id,
-             :posts_count,
-             :filtered_posts_count,
-             :posts
+  attributes :id, :category_id, :posts_count, :filtered_posts_count, :posts
 
   has_many :participants, serializer: UserWordpressSerializer, embed: :objects
   has_many :posts, serializer: PostWordpressSerializer, embed: :objects
 
   def id
     object.topic.id
+  end
+
+  def category_id
+    object.topic.category_id
   end
 
   def posts_count
@@ -30,5 +30,4 @@ class TopicViewWordpressSerializer < ApplicationSerializer
   def posts
     object.posts
   end
-
 end

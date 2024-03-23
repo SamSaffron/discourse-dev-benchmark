@@ -1,38 +1,52 @@
 # frozen_string_literal: true
 
-require 'rails_helper'
+RSpec.describe UserAuthenticator do
+  def github_auth(email_valid)
+    {
+      email: "user53@discourse.org",
+      username: "joedoe546",
+      email_valid: email_valid,
+      omit_username: nil,
+      name: "Joe Doe 546",
+      authenticator_name: "github",
+      extra_data: {
+        provider: "github",
+        uid: "100",
+      },
+      skip_email_validation: false,
+    }
+  end
 
-def github_auth(email_valid)
-  {
-    email: "user53@discourse.org",
-    username: "joedoe546",
-    email_valid: email_valid,
-    omit_username: nil,
-    name: "Joe Doe 546",
-    authenticator_name: "github",
-    extra_data: {
-      github_user_id: "100",
-      github_screen_name: "joedoe546"
-    },
-    skip_email_validation: false
-  }
-end
+  before { SiteSetting.enable_github_logins = true }
 
-describe UserAuthenticator do
-  context "#finish" do
+  describe "#start" do
+    describe "without authentication session" do
+      it "should apply the right user attributes" do
+        user = User.new
+        UserAuthenticator.new(user, {}).start
+
+        expect(user.password_required?).to eq(true)
+      end
+
+      it "allows password requirement to be skipped" do
+        user = User.new
+        UserAuthenticator.new(user, {}, require_password: false).start
+
+        expect(user.password_required?).to eq(false)
+      end
+    end
+  end
+
+  describe "#finish" do
     fab!(:group) { Fabricate(:group, automatic_membership_email_domains: "discourse.org") }
 
-    before do
-      SiteSetting.enable_github_logins = true
-    end
-
-    it "confirms email and adds the user to appropraite groups based on email" do
+    it "confirms email and adds the user to appropriate groups based on email" do
       user = Fabricate(:user, email: "user53@discourse.org")
       expect(group.usernames).not_to include(user.username)
 
       authentication = github_auth(true)
 
-      UserAuthenticator.new(user, authentication: authentication).finish
+      UserAuthenticator.new(user, { authentication: authentication }).finish
       expect(user.email_confirmed?).to be_truthy
       expect(group.usernames).to include(user.username)
     end
@@ -42,7 +56,7 @@ describe UserAuthenticator do
 
       authentication = github_auth(false)
 
-      UserAuthenticator.new(user, authentication: authentication).finish
+      UserAuthenticator.new(user, { authentication: authentication }).finish
       expect(user.email_confirmed?).to be_falsey
       expect(group.usernames).not_to include(user.username)
     end
@@ -52,7 +66,7 @@ describe UserAuthenticator do
 
       authentication = github_auth(true)
 
-      UserAuthenticator.new(user, authentication: authentication).finish
+      UserAuthenticator.new(user, { authentication: authentication }).finish
       expect(user.email_confirmed?).to be_falsey
       expect(group.usernames).not_to include(user.username)
     end
@@ -65,6 +79,13 @@ describe UserAuthenticator do
       expect(user.email_confirmed?).to be_truthy
 
       expect(session[:authentication]).to eq(nil)
+    end
+
+    it "raises an error for non-boolean values" do
+      user = Fabricate(:user, email: "user53@discourse.org")
+      session = { authentication: github_auth("string") }
+
+      expect do UserAuthenticator.new(user, session).finish end.to raise_error ArgumentError
     end
   end
 end

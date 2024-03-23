@@ -14,34 +14,36 @@ class UploadRecovery
     begin
       analyzer = PostAnalyzer.new(post.raw, post.topic_id)
 
-      analyzer.cooked_stripped.css("img", "a").each do |media|
-        if media.name == "img" && orig_src = media["data-orig-src"]
-          if dom_class = media["class"]
-            if (Post.white_listed_image_classes & dom_class.split).count > 0
-              next
+      analyzer
+        .cooked_stripped
+        .css("img", "a")
+        .each do |media|
+          if media.name == "img" && orig_src = media["data-orig-src"]
+            if dom_class = media["class"]
+              next if (Post.allowed_image_classes & dom_class.split).count > 0
             end
-          end
 
-          if @dry_run
-            puts "#{post.full_url} #{orig_src}"
-          else
-            recover_post_upload(post, Upload.sha1_from_short_url(orig_src))
-          end
-        elsif url = (media["href"] || media["src"])
-          data = Upload.extract_url(url)
-          next unless data
-
-          sha1 = data[2]
-
-          unless upload = Upload.get_from_url(url)
             if @dry_run
-              puts "#{post.full_url} #{url}"
+              puts "#{post.full_url} #{orig_src}"
             else
-              recover_post_upload(post, sha1)
+              recover_post_upload(post, Upload.sha1_from_short_url(orig_src))
+            end
+          elsif url = (media["href"] || media["src"])
+            data = Upload.extract_url(url)
+            next unless data
+
+            upload = Upload.get_from_url(url)
+
+            if !upload || upload.verification_status == Upload.verification_statuses[:invalid_etag]
+              if @dry_run
+                puts "#{post.full_url} #{url}"
+              else
+                sha1 = data[2]
+                recover_post_upload(post, sha1)
+              end
             end
           end
         end
-      end
     rescue => e
       raise e if @stop_on_error
       puts "#{post.full_url} #{e.class}: #{e.message}"
@@ -53,15 +55,12 @@ class UploadRecovery
   def recover_post_upload(post, sha1)
     return unless valid_sha1?(sha1)
 
-    attributes = {
-      post: post,
-      sha1: sha1
-    }
+    attributes = { post: post, sha1: sha1 }
 
     if Discourse.store.external?
-      recover_post_upload_from_s3(attributes)
+      recover_post_upload_from_s3(**attributes)
     else
-      recover_post_upload_from_local(attributes)
+      recover_post_upload_from_local(**attributes)
     end
   end
 
@@ -95,26 +94,12 @@ class UploadRecovery
   end
 
   def recover_from_local(sha1:, user_id:)
-    public_path = Rails.root.join("public")
-
-    @paths ||= begin
-      Dir.glob(File.join(
-        public_path,
-        'uploads',
-        'tombstone',
-        RailsMultisite::ConnectionManagement.current_db,
-        'original',
-        '**',
-        '*.*'
-      )).concat(Dir.glob(File.join(
-        public_path,
-        'uploads',
-        RailsMultisite::ConnectionManagement.current_db,
-        'original',
-        '**',
-        '*.*'
-      )))
-    end
+    @paths ||=
+      begin
+        Dir.glob(File.join(Discourse.store.tombstone_dir, "original", "**", "*.*")).concat(
+          Dir.glob(File.join(Discourse.store.upload_path, "original", "**", "*.*")),
+        )
+      end
 
     @paths.each do |path|
       if path =~ /#{sha1}/
@@ -133,20 +118,29 @@ class UploadRecovery
   end
 
   def recover_from_s3(sha1:, user_id:)
-    @object_keys ||= begin
-      s3_helper = Discourse.store.s3_helper
+    @object_keys ||=
+      begin
+        s3_helper = Discourse.store.s3_helper
 
-      if Rails.configuration.multisite
-        current_db = RailsMultisite::ConnectionManagement.current_db
-        s3_helper.list("uploads/#{current_db}/original").map(&:key).concat(
-          s3_helper.list("uploads/#{FileStore::S3Store::TOMBSTONE_PREFIX}#{current_db}/original").map(&:key)
-        )
-      else
-        s3_helper.list("original").map(&:key).concat(
-          s3_helper.list("#{FileStore::S3Store::TOMBSTONE_PREFIX}original").map(&:key)
-        )
+        if Rails.configuration.multisite
+          current_db = RailsMultisite::ConnectionManagement.current_db
+          s3_helper
+            .list("uploads/#{current_db}/original")
+            .map(&:key)
+            .concat(
+              s3_helper.list(
+                "uploads/#{FileStore::S3Store::TOMBSTONE_PREFIX}#{current_db}/original",
+              ).map(&:key),
+            )
+        else
+          s3_helper
+            .list("original")
+            .map(&:key)
+            .concat(s3_helper.list("#{FileStore::S3Store::TOMBSTONE_PREFIX}original").map(&:key))
+        end
       end
-    end
+
+    upload_exists = Upload.exists?(sha1: sha1)
 
     @object_keys.each do |key|
       if key =~ /#{sha1}/
@@ -159,18 +153,23 @@ class UploadRecovery
           Discourse.store.s3_helper.copy(
             old_key,
             key,
-            options: { acl: "public-read" }
+            options: {
+              acl: SiteSetting.s3_use_acls ? "public-read" : nil,
+            },
           )
         end
+
+        next if upload_exists
 
         url = "https:#{SiteSetting.Upload.absolute_base_url}/#{key}"
 
         begin
-          tmp = FileHelper.download(
-            url,
-            max_file_size: SiteSetting.max_image_size_kb.kilobytes,
-            tmp_file_name: "recover_from_s3"
-          )
+          tmp =
+            FileHelper.download(
+              url,
+              max_file_size: SiteSetting.max_image_size_kb.kilobytes,
+              tmp_file_name: "recover_from_s3",
+            )
 
           if tmp
             upload = create_upload(tmp, File.basename(key), user_id)

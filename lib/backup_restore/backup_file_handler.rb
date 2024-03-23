@@ -6,12 +6,13 @@ module BackupRestore
 
     delegate :log, to: :@logger, private: true
 
-    def initialize(logger, filename, current_db, root_tmp_directory = Rails.root)
+    def initialize(logger, filename, current_db, root_tmp_directory: Rails.root, location: nil)
       @logger = logger
       @filename = filename
       @current_db = current_db
       @root_tmp_directory = root_tmp_directory
-      @is_archive = !(@filename =~ /\.sql\.gz$/)
+      @is_archive = !(@filename =~ /\.sql\.gz\z/)
+      @store_location = location
     end
 
     def decompress
@@ -48,7 +49,7 @@ module BackupRestore
     end
 
     def copy_archive_to_tmp_directory
-      store = BackupRestore::BackupStore.create
+      store = BackupRestore::BackupStore.create(location: @store_location)
 
       if store.remote?
         log "Downloading archive to tmp directory..."
@@ -64,10 +65,27 @@ module BackupRestore
     def decompress_archive
       return if !@is_archive
 
+      # the transformation is a workaround for a bug which existed between v2.6.0.beta1 and v2.6.0.beta2
+      path_transformation =
+        case tar_implementation
+        when :gnu
+          %w[--transform s|var/www/discourse/public/uploads/|uploads/|]
+        when :bsd
+          %w[-s |var/www/discourse/public/uploads/|uploads/|]
+        end
+
       log "Unzipping archive, this may take a while..."
-      pipeline = Compression::Pipeline.new([Compression::Tar.new, Compression::Gzip.new])
-      unzipped_path = pipeline.decompress(@tmp_directory, @archive_path, available_size)
-      pipeline.strip_directory(unzipped_path, @tmp_directory)
+      Discourse::Utils.execute_command(
+        "tar",
+        "--extract",
+        "--gzip",
+        "--file",
+        @archive_path,
+        "--directory",
+        @tmp_directory,
+        *path_transformation,
+        failure_message: "Failed to decompress archive.",
+      )
     end
 
     def extract_db_dump
@@ -75,15 +93,19 @@ module BackupRestore
         if @is_archive
           # for compatibility with backups from Discourse v1.5 and below
           old_dump_path = File.join(@tmp_directory, OLD_DUMP_FILENAME)
-          File.exists?(old_dump_path) ? old_dump_path : File.join(@tmp_directory, BackupRestore::DUMP_FILE)
+          if File.exist?(old_dump_path)
+            old_dump_path
+          else
+            File.join(@tmp_directory, BackupRestore::DUMP_FILE)
+          end
         else
           File.join(@tmp_directory, @filename)
         end
 
-      if File.extname(@db_dump_path) == '.gz'
+      if File.extname(@db_dump_path) == ".gz"
         log "Extracting dump file..."
         Compression::Gzip.new.decompress(@tmp_directory, @db_dump_path, available_size)
-        @db_dump_path.delete_suffix!('.gz')
+        @db_dump_path.delete_suffix!(".gz")
       end
 
       @db_dump_path
@@ -91,6 +113,21 @@ module BackupRestore
 
     def available_size
       SiteSetting.decompressed_backup_max_file_size_mb
+    end
+
+    def tar_implementation
+      @tar_version ||=
+        begin
+          tar_version = Discourse::Utils.execute_command("tar", "--version")
+
+          if tar_version.include?("GNU tar")
+            :gnu
+          elsif tar_version.include?("bsdtar")
+            :bsd
+          else
+            raise "Unknown tar implementation: #{tar_version}"
+          end
+        end
     end
   end
 end

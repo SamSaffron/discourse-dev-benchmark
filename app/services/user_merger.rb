@@ -5,6 +5,7 @@ class UserMerger
     @source_user = source_user
     @target_user = target_user
     @acting_user = acting_user
+    @user_id = source_user.id
     @source_primary_email = source_user.email
   end
 
@@ -22,25 +23,45 @@ class UserMerger
     update_user_stats
 
     delete_source_user
-    delete_source_user_references
     log_merge
+
+    @target_user.reload
   end
 
   protected
 
   def update_username
-    UsernameChanger.update_username(user_id: @source_user.id,
-                                    old_username: @source_user.username,
-                                    new_username: @target_user.username,
-                                    avatar_template: @target_user.avatar_template,
-                                    asynchronous: false)
+    return if @source_user.username == @target_user.username
+
+    if @acting_user
+      ::MessageBus.publish "/merge_user",
+                           { message: I18n.t("admin.user.merge_user.updating_username") },
+                           user_ids: [@acting_user.id]
+    end
+    UsernameChanger.update_username(
+      user_id: @source_user.id,
+      old_username: @source_user.username,
+      new_username: @target_user.username,
+      avatar_template: @target_user.avatar_template,
+      asynchronous: false,
+    )
   end
 
   def move_posts
-    posts = Post.with_deleted
-      .where(user_id: @source_user.id)
-      .order(:topic_id, :post_number)
-      .pluck(:topic_id, :id)
+    posts =
+      Post
+        .with_deleted
+        .where(user_id: @source_user.id)
+        .order(:topic_id, :post_number)
+        .pluck(:topic_id, :id)
+
+    return if posts.count == 0
+
+    if @acting_user
+      ::MessageBus.publish "/merge_user",
+                           { message: I18n.t("admin.user.merge_user.changing_post_ownership") },
+                           user_ids: [@acting_user.id]
+    end
 
     last_topic_id = nil
     post_ids = []
@@ -64,11 +85,17 @@ class UserMerger
       post_ids: post_ids,
       new_owner: @target_user,
       acting_user: Discourse.system_user,
-      skip_revision: true
+      skip_revision: true,
     ).change_owner!
   end
 
   def merge_given_daily_likes
+    if @acting_user
+      ::MessageBus.publish "/merge_user",
+                           { message: I18n.t("admin.user.merge_user.merging_given_daily_likes") },
+                           user_ids: [@acting_user.id]
+    end
+
     sql = <<~SQL
       INSERT INTO given_daily_likes AS g (user_id, likes_given, given_date, limit_reached)
         SELECT
@@ -96,16 +123,24 @@ class UserMerger
       source_user_id: @source_user.id,
       target_user_id: @target_user.id,
       max_likes_per_day: SiteSetting.max_likes_per_day,
-      action_type_id: PostActionType.types[:like]
+      action_type_id: PostActionType.types[:like],
     )
   end
 
   def merge_post_timings
-    update_user_id(:post_timings, conditions: ["x.topic_id = y.topic_id",
-                                               "x.post_number = y.post_number"])
+    if @acting_user
+      ::MessageBus.publish "/merge_user",
+                           { message: I18n.t("admin.user.merge_user.merging_post_timings") },
+                           user_ids: [@acting_user.id]
+    end
+
+    update_user_id(
+      :post_timings,
+      conditions: ["x.topic_id = y.topic_id", "x.post_number = y.post_number"],
+    )
     sql = <<~SQL
       UPDATE post_timings AS t
-      SET msecs = t.msecs + s.msecs
+      SET msecs = LEAST(t.msecs::bigint + s.msecs, 2^31 - 1)
       FROM post_timings AS s
       WHERE t.user_id = :target_user_id AND s.user_id = :source_user_id
             AND t.topic_id = s.topic_id AND t.post_number = s.post_number
@@ -115,6 +150,12 @@ class UserMerger
   end
 
   def merge_user_visits
+    if @acting_user
+      ::MessageBus.publish "/merge_user",
+                           { message: I18n.t("admin.user.merge_user.merging_user_visits") },
+                           user_ids: [@acting_user.id]
+    end
+
     update_user_id(:user_visits, conditions: "x.visited_at = y.visited_at")
 
     sql = <<~SQL
@@ -131,14 +172,28 @@ class UserMerger
   end
 
   def update_site_settings
-    SiteSetting.all_settings(true).each do |setting|
-      if setting[:type] == "username" && setting[:value] == @source_user.username
-        SiteSetting.set_and_log(setting[:setting], @target_user.username)
-      end
+    if @acting_user
+      ::MessageBus.publish "/merge_user",
+                           { message: I18n.t("admin.user.merge_user.updating_site_settings") },
+                           user_ids: [@acting_user.id]
     end
+
+    SiteSetting
+      .all_settings(include_hidden: true)
+      .each do |setting|
+        if setting[:type] == "username" && setting[:value] == @source_user.username
+          SiteSetting.set_and_log(setting[:setting], @target_user.username)
+        end
+      end
   end
 
   def update_user_stats
+    if @acting_user
+      ::MessageBus.publish "/merge_user",
+                           { message: I18n.t("admin.user.merge_user.updating_user_stats") },
+                           user_ids: [@acting_user.id]
+    end
+
     # topics_entered
     DB.exec(<<~SQL, target_user_id: @target_user.id)
       UPDATE user_stats
@@ -193,6 +248,12 @@ class UserMerger
   end
 
   def merge_user_attributes
+    if @acting_user
+      ::MessageBus.publish "/merge_user",
+                           { message: I18n.t("admin.user.merge_user.merging_user_attributes") },
+                           user_ids: [@acting_user.id]
+    end
+
     DB.exec(<<~SQL, source_user_id: @source_user.id, target_user_id: @target_user.id)
       UPDATE users AS t
       SET created_at              = LEAST(t.created_at, s.created_at),
@@ -225,7 +286,7 @@ class UserMerger
         bio_cooked_version   = COALESCE(t.bio_cooked_version, s.bio_cooked_version),
         profile_background_upload_id = COALESCE(t.profile_background_upload_id, s.profile_background_upload_id),
         dismissed_banner_key = COALESCE(t.dismissed_banner_key, s.dismissed_banner_key),
-        badge_granted_title  = t.badge_granted_title OR s.badge_granted_title,
+        granted_title_badge_id = COALESCE(t.granted_title_badge_id, s.granted_title_badge_id),
         card_background_upload_id = COALESCE(t.card_background_upload_id, s.card_background_upload_id),
         views                = t.views + s.views
       FROM user_profiles AS s
@@ -234,6 +295,12 @@ class UserMerger
   end
 
   def update_user_ids
+    if @acting_user
+      ::MessageBus.publish "/merge_user",
+                           { message: I18n.t("admin.user.merge_user.updating_user_ids") },
+                           user_ids: [@acting_user.id]
+    end
+
     Category.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
 
     update_user_id(:category_users, conditions: ["x.category_id = y.category_id"])
@@ -242,6 +309,8 @@ class UserMerger
 
     update_user_id(:draft_sequences, conditions: "x.draft_key = y.draft_key")
     update_user_id(:drafts, conditions: "x.draft_key = y.draft_key")
+
+    update_user_id(:dismissed_topic_users, conditions: "x.topic_id = y.topic_id")
 
     EmailLog.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
 
@@ -253,23 +322,44 @@ class UserMerger
     IncomingEmail.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
 
     IncomingLink.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
-    IncomingLink.where(current_user_id: @source_user.id).update_all(current_user_id: @target_user.id)
+    IncomingLink.where(current_user_id: @source_user.id).update_all(
+      current_user_id: @target_user.id,
+    )
 
-    Invite.with_deleted.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
-    Invite.with_deleted.where(invited_by_id: @source_user.id).update_all(invited_by_id: @target_user.id)
-    Invite.with_deleted.where(deleted_by_id: @source_user.id).update_all(deleted_by_id: @target_user.id)
+    InvitedUser.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
+    Invite
+      .with_deleted
+      .where(invited_by_id: @source_user.id)
+      .update_all(invited_by_id: @target_user.id)
+    Invite
+      .with_deleted
+      .where(deleted_by_id: @source_user.id)
+      .update_all(deleted_by_id: @target_user.id)
 
     update_user_id(:muted_users, conditions: "x.muted_user_id = y.muted_user_id")
-    update_user_id(:muted_users, user_id_column_name: "muted_user_id", conditions: "x.user_id = y.user_id")
+    update_user_id(
+      :muted_users,
+      user_id_column_name: "muted_user_id",
+      conditions: "x.user_id = y.user_id",
+    )
 
     update_user_id(:ignored_users, conditions: "x.ignored_user_id = y.ignored_user_id")
-    update_user_id(:ignored_users, user_id_column_name: "ignored_user_id", conditions: "x.user_id = y.user_id")
+    update_user_id(
+      :ignored_users,
+      user_id_column_name: "ignored_user_id",
+      conditions: "x.user_id = y.user_id",
+    )
 
     Notification.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
 
-    update_user_id(:post_actions, conditions: ["x.post_id = y.post_id",
-                                               "x.post_action_type_id = y.post_action_type_id",
-                                               "x.targets_topic = y.targets_topic"])
+    update_user_id(
+      :post_actions,
+      conditions: [
+        "x.post_id = y.post_id",
+        "x.post_action_type_id = y.post_action_type_id",
+        "x.targets_topic = y.targets_topic",
+      ],
+    )
 
     PostAction.where(deleted_by_id: @source_user.id).update_all(deleted_by_id: @target_user.id)
     PostAction.where(deferred_by_id: @source_user.id).update_all(deferred_by_id: @target_user.id)
@@ -278,13 +368,24 @@ class UserMerger
 
     PostRevision.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
 
-    Post.with_deleted.where(deleted_by_id: @source_user.id).update_all(deleted_by_id: @target_user.id)
-    Post.with_deleted.where(last_editor_id: @source_user.id).update_all(last_editor_id: @target_user.id)
+    Post
+      .with_deleted
+      .where(deleted_by_id: @source_user.id)
+      .update_all(deleted_by_id: @target_user.id)
+    Post
+      .with_deleted
+      .where(last_editor_id: @source_user.id)
+      .update_all(last_editor_id: @target_user.id)
     Post.with_deleted.where(locked_by_id: @source_user.id).update_all(locked_by_id: @target_user.id)
-    Post.with_deleted.where(reply_to_user_id: @source_user.id).update_all(reply_to_user_id: @target_user.id)
+    Post
+      .with_deleted
+      .where(reply_to_user_id: @source_user.id)
+      .update_all(reply_to_user_id: @target_user.id)
 
     Reviewable.where(created_by_id: @source_user.id).update_all(created_by_id: @target_user.id)
-    ReviewableHistory.where(created_by_id: @source_user.id).update_all(created_by_id: @target_user.id)
+    ReviewableHistory.where(created_by_id: @source_user.id).update_all(
+      created_by_id: @target_user.id,
+    )
 
     SearchLog.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
 
@@ -294,22 +395,36 @@ class UserMerger
 
     update_user_id(:topic_allowed_users, conditions: "x.topic_id = y.topic_id")
 
-    TopicEmbed.with_deleted.where(deleted_by_id: @source_user.id).update_all(deleted_by_id: @target_user.id)
+    TopicEmbed
+      .with_deleted
+      .where(deleted_by_id: @source_user.id)
+      .update_all(deleted_by_id: @target_user.id)
 
     TopicLink.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
     TopicLinkClick.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
 
-    TopicTimer.with_deleted.where(deleted_by_id: @source_user.id).update_all(deleted_by_id: @target_user.id)
+    TopicTimer
+      .with_deleted
+      .where(deleted_by_id: @source_user.id)
+      .update_all(deleted_by_id: @target_user.id)
 
-    update_user_id(:topic_timers, conditions: ["x.status_type = y.status_type",
-                                               "x.topic_id = y.topic_id",
-                                               "y.deleted_at IS NULL"])
+    update_user_id(
+      :topic_timers,
+      conditions: [
+        "x.status_type = y.status_type",
+        "x.topic_id = y.topic_id",
+        "y.deleted_at IS NULL",
+      ],
+    )
 
     update_user_id(:topic_users, conditions: "x.topic_id = y.topic_id")
 
     update_user_id(:topic_views, conditions: "x.topic_id = y.topic_id")
 
-    Topic.with_deleted.where(deleted_by_id: @source_user.id).update_all(deleted_by_id: @target_user.id)
+    Topic
+      .with_deleted
+      .where(deleted_by_id: @source_user.id)
+      .update_all(deleted_by_id: @target_user.id)
 
     UnsubscribeKey.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
 
@@ -317,35 +432,56 @@ class UserMerger
 
     update_user_id(:user_archived_messages, conditions: "x.topic_id = y.topic_id")
 
-    update_user_id(:user_actions,
-                   user_id_column_name: "user_id",
-                   conditions: ["x.action_type = y.action_type",
-                                "x.target_topic_id IS NOT DISTINCT FROM y.target_topic_id",
-                                "x.target_post_id IS NOT DISTINCT FROM y.target_post_id",
-                                "(x.acting_user_id IN (:source_user_id, :target_user_id) OR x.acting_user_id IS NOT DISTINCT FROM y.acting_user_id)"])
-    update_user_id(:user_actions,
-                   user_id_column_name: "acting_user_id",
-                   conditions: ["x.action_type = y.action_type",
-                                "x.user_id = y.user_id",
-                                "x.target_topic_id IS NOT DISTINCT FROM y.target_topic_id",
-                                "x.target_post_id IS NOT DISTINCT FROM y.target_post_id"])
+    update_user_id(
+      :user_actions,
+      user_id_column_name: "user_id",
+      conditions: [
+        "x.action_type = y.action_type",
+        "x.target_topic_id IS NOT DISTINCT FROM y.target_topic_id",
+        "x.target_post_id IS NOT DISTINCT FROM y.target_post_id",
+        "(x.acting_user_id IN (:source_user_id, :target_user_id) OR x.acting_user_id IS NOT DISTINCT FROM y.acting_user_id)",
+      ],
+    )
+    update_user_id(
+      :user_actions,
+      user_id_column_name: "acting_user_id",
+      conditions: [
+        "x.action_type = y.action_type",
+        "x.user_id = y.user_id",
+        "x.target_topic_id IS NOT DISTINCT FROM y.target_topic_id",
+        "x.target_post_id IS NOT DISTINCT FROM y.target_post_id",
+      ],
+    )
 
-    update_user_id(:user_badges, conditions: ["x.badge_id = y.badge_id",
-                                              "x.seq = y.seq",
-                                              "x.post_id IS NOT DISTINCT FROM y.post_id"])
+    update_user_id(
+      :user_badges,
+      conditions: [
+        "x.badge_id = y.badge_id",
+        "x.seq = y.seq",
+        "x.post_id IS NOT DISTINCT FROM y.post_id",
+      ],
+    )
 
     UserBadge.where(granted_by_id: @source_user.id).update_all(granted_by_id: @target_user.id)
 
     update_user_id(:user_custom_fields, conditions: "x.name = y.name")
 
-    update_user_id(:user_emails, conditions: "x.email = y.email OR y.primary = false", updates: '"primary" = false')
+    if @target_user.human?
+      update_user_id(
+        :user_emails,
+        conditions: "x.email = y.email OR y.primary = false",
+        updates: '"primary" = false',
+      )
+    end
 
     UserExport.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
 
     UserHistory.where(target_user_id: @source_user.id).update_all(target_user_id: @target_user.id)
     UserHistory.where(acting_user_id: @source_user.id).update_all(acting_user_id: @target_user.id)
 
-    UserProfileView.where(user_profile_id: @source_user.id).update_all(user_profile_id: @target_user.id)
+    UserProfileView.where(user_profile_id: @source_user.id).update_all(
+      user_profile_id: @target_user.id,
+    )
     UserProfileView.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
 
     UserWarning.where(user_id: @source_user.id).update_all(user_id: @target_user.id)
@@ -355,29 +491,26 @@ class UserMerger
   end
 
   def delete_source_user
+    if @acting_user
+      ::MessageBus.publish "/merge_user",
+                           { message: I18n.t("admin.user.merge_user.deleting_source_user") },
+                           user_ids: [@acting_user.id]
+    end
+
     @source_user.reload
+
+    @source_user.skip_email_validation = true
     @source_user.update(
       admin: false,
-      email: "#{@source_user.username}_#{SecureRandom.hex}@no-email.invalid"
+      email: "#{@source_user.username}_#{SecureRandom.hex}@no-email.invalid",
     )
 
     UserDestroyer.new(Discourse.system_user).destroy(@source_user, quiet: true)
   end
 
-  def delete_source_user_references
-    Developer.where(user_id: @source_user.id).delete_all
-    DraftSequence.where(user_id: @source_user.id).delete_all
-    GivenDailyLike.where(user_id: @source_user.id).delete_all
-    MutedUser.where(user_id: @source_user.id).or(MutedUser.where(muted_user_id: @source_user.id)).delete_all
-    IgnoredUser.where(user_id: @source_user.id).or(IgnoredUser.where(ignored_user_id: @source_user.id)).delete_all
-    UserAuthTokenLog.where(user_id: @source_user.id).delete_all
-    UserAvatar.where(user_id: @source_user.id).delete_all
-    UserAction.where(acting_user_id: @source_user.id).delete_all
-  end
-
   def log_merge
     logger = StaffActionLogger.new(@acting_user || Discourse.system_user)
-    logger.log_user_merge(@target_user, @source_user.username, @source_primary_email)
+    logger.log_user_merge(@target_user, @source_user.username, @source_primary_email || "")
   end
 
   def update_user_id(table_name, opts = {})

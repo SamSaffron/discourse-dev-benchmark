@@ -1,14 +1,27 @@
 # frozen_string_literal: true
 
 class Draft < ActiveRecord::Base
-  NEW_TOPIC ||= 'new_topic'
-  NEW_PRIVATE_MESSAGE ||= 'new_private_message'
-  EXISTING_TOPIC ||= 'topic_'
+  NEW_TOPIC ||= "new_topic"
+  NEW_PRIVATE_MESSAGE ||= "new_private_message"
+  EXISTING_TOPIC ||= "topic_"
 
-  class OutOfSequence < StandardError; end
+  belongs_to :user
 
-  def self.set(user, key, sequence, data, owner = nil, retry_not_unique: true)
-    if SiteSetting.backup_drafts_to_pm_length > 0 && SiteSetting.backup_drafts_to_pm_length < data.length
+  has_many :upload_references, as: :target, dependent: :delete_all
+
+  validates :draft_key, length: { maximum: 25 }
+
+  after_commit :update_draft_count, on: %i[create destroy]
+
+  class OutOfSequence < StandardError
+  end
+
+  def self.set(user, key, sequence, data, owner = nil, force_save: false)
+    return 0 if !User.human_user_id?(user.id)
+    force_save = force_save.to_s == "true"
+
+    if SiteSetting.backup_drafts_to_pm_length > 0 &&
+         SiteSetting.backup_drafts_to_pm_length < data.length
       backup_draft(user, key, sequence, data)
     end
 
@@ -37,21 +50,17 @@ class Draft < ActiveRecord::Base
     current_sequence ||= 0
 
     if draft_id
-      if current_sequence != sequence
-        raise Draft::OutOfSequence
-      end
+      raise Draft::OutOfSequence if !force_save && (current_sequence != sequence)
 
-      if owner && current_owner && current_owner != owner
-        sequence += 1
+      sequence = current_sequence if force_save
+      sequence += 1
 
-        DraftSequence.upsert({
-            sequence: sequence,
-            draft_key: key,
-            user_id: user.id,
-          },
-          unique_by: [:user_id, :draft_key]
-        )
-      end
+      # we need to keep upping our sequence on every save
+      # if we do not do that there are bad race conditions
+      DraftSequence.upsert(
+        { sequence: sequence, draft_key: key, user_id: user.id },
+        unique_by: %i[user_id draft_key],
+      )
 
       DB.exec(<<~SQL, id: draft_id, sequence: sequence, data: data, owner: owner || current_owner)
         UPDATE drafts
@@ -59,42 +68,44 @@ class Draft < ActiveRecord::Base
              , data = :data
              , revisions = revisions + 1
              , owner = :owner
+             , updated_at = CURRENT_TIMESTAMP
          WHERE id = :id
       SQL
-
     elsif sequence != current_sequence
       raise Draft::OutOfSequence
     else
-      begin
-        Draft.create!(
-          user_id: user.id,
-          draft_key: key,
-          data: data,
-          sequence: sequence,
-          owner: owner
-        )
-      rescue ActiveRecord::RecordNotUnique => e
-        # we need this to be fast and with minimal locking, in some cases we can have a race condition
-        # around 2 controller actions calling for draft creation at the exact same time
-        # to avoid complex locking and a distributed mutex, since this is so rare, simply add a single retry
-        if retry_not_unique
-          set(user, key, sequence, data, owenr, retry_not_unique: false)
-        else
-          raise e
-        end
-      end
+      opts = { user_id: user.id, draft_key: key, data: data, sequence: sequence, owner: owner }
+
+      draft_id = DB.query_single(<<~SQL, opts).first
+        INSERT INTO drafts (user_id, draft_key, data, sequence, owner, created_at, updated_at)
+        VALUES (:user_id, :draft_key, :data, :sequence, :owner, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (user_id, draft_key) DO
+        UPDATE
+        SET
+          sequence = :sequence,
+          data = :data,
+          revisions = drafts.revisions + 1,
+          owner = :owner,
+          updated_at = CURRENT_TIMESTAMP
+        RETURNING id
+      SQL
+
+      UserStat.update_draft_count(user.id)
     end
+
+    UploadReference.ensure_exist!(
+      upload_ids: Upload.extract_upload_ids(data),
+      target_type: "Draft",
+      target_id: draft_id,
+    )
 
     sequence
   end
 
   def self.get(user, key, sequence)
+    return if !user || !user.id || !User.human_user_id?(user.id)
 
-    opts = {
-      user_id: user.id,
-      draft_key: key,
-      sequence: sequence
-    }
+    opts = { user_id: user.id, draft_key: key, sequence: sequence }
 
     current_sequence, data, draft_sequence = DB.query_single(<<~SQL, opts)
       WITH draft AS (
@@ -115,23 +126,99 @@ class Draft < ActiveRecord::Base
 
     current_sequence ||= 0
 
-    if sequence != current_sequence
-      raise Draft::OutOfSequence
-    end
+    raise Draft::OutOfSequence if sequence != current_sequence
 
     data if current_sequence == draft_sequence
   end
 
+  def self.has_topic_draft(user)
+    return if !user || !user.id || !User.human_user_id?(user.id)
+
+    Draft.where(user_id: user.id, draft_key: NEW_TOPIC).present?
+  end
+
   def self.clear(user, key, sequence)
+    if !user || !user.id || !User.human_user_id?(user.id)
+      raise StandardError.new("user not present")
+    end
+
     current_sequence = DraftSequence.current(user, key)
 
     # bad caller is a reason to complain
-    if sequence != current_sequence
-      raise Draft::OutOfSequence
-    end
+    raise Draft::OutOfSequence.new("bad draft sequence") if sequence != current_sequence
 
     # corrupt data is not a reason not to leave data
     Draft.where(user_id: user.id, draft_key: key).destroy_all
+  end
+
+  def display_user
+    post&.user || topic&.user || user
+  end
+
+  def parsed_data
+    begin
+      JSON.parse(data)
+    rescue JSON::ParserError
+      {}
+    end
+  end
+
+  def topic_id
+    draft_key.gsub(EXISTING_TOPIC, "").to_i if draft_key.starts_with?(EXISTING_TOPIC)
+  end
+
+  def topic_preloaded?
+    !!defined?(@topic)
+  end
+
+  def topic
+    topic_preloaded? ?
+      @topic :
+      @topic = Draft.allowed_draft_topics_for_user(user).find_by(id: topic_id)
+  end
+
+  def preload_topic(topic)
+    @topic = topic
+  end
+
+  def post_id
+    parsed_data["postId"]
+  end
+
+  def post_preloaded?
+    !!defined?(@post)
+  end
+
+  def post
+    post_preloaded? ? @post : @post = Draft.allowed_draft_posts_for_user(user).find_by(id: post_id)
+  end
+
+  def preload_post(post)
+    @post = post
+  end
+
+  def self.preload_data(drafts, user)
+    topic_ids = drafts.map(&:topic_id)
+    post_ids = drafts.map(&:post_id)
+
+    topics = self.allowed_draft_topics_for_user(user).where(id: topic_ids)
+    posts = self.allowed_draft_posts_for_user(user).where(id: post_ids)
+
+    drafts.each do |draft|
+      draft.preload_topic(topics.detect { |t| t.id == draft.topic_id })
+      draft.preload_post(posts.detect { |p| p.id == draft.post_id })
+    end
+  end
+
+  def self.allowed_draft_topics_for_user(user)
+    topics = Topic.listable_topics.secured(Guardian.new(user))
+    pms = Topic.private_messages_for_user(user)
+    topics.or(pms)
+  end
+
+  def self.allowed_draft_posts_for_user(user)
+    # .secured handles whispers, merge handles topic/pm visibility
+    Post.secured(Guardian.new(user)).joins(:topic).merge(self.allowed_draft_topics_for_user(user))
   end
 
   def self.stream(opts = nil)
@@ -141,36 +228,12 @@ class Draft < ActiveRecord::Base
     offset = (opts[:offset] || 0).to_i
     limit = (opts[:limit] || 30).to_i
 
-    # JOIN of topics table based on manipulating draft_key seems imperfect
-    builder = DB.build <<~SQL
-      SELECT
-        d.*, t.title, t.id topic_id, t.archetype,
-        t.category_id, t.closed topic_closed, t.archived topic_archived,
-        pu.username, pu.name, pu.id user_id, pu.uploaded_avatar_id, pu.username_lower,
-        du.username draft_username, NULL as raw, NULL as cooked, NULL as post_number
-      FROM drafts d
-      LEFT JOIN LATERAL json_extract_path_text (d.data::json, 'postId') postId ON TRUE
-      LEFT JOIN posts p ON postId :: BIGINT = p.id
-      LEFT JOIN topics t ON
-        CASE
-            WHEN d.draft_key LIKE '%' || '#{EXISTING_TOPIC}' || '%'
-              THEN CAST(replace(d.draft_key, '#{EXISTING_TOPIC}', '') AS INT)
-            ELSE 0
-        END = t.id
-      JOIN users pu on pu.id = COALESCE(p.user_id, t.user_id, d.user_id)
-      JOIN users du on du.id = #{user_id}
-      /*where*/
-      /*order_by*/
-      /*offset*/
-      /*limit*/
-    SQL
+    stream = Draft.where(user_id: user_id).order(updated_at: :desc).offset(offset).limit(limit)
 
-    builder
-      .where('d.user_id = :user_id', user_id: user_id.to_i)
-      .order_by('d.updated_at desc')
-      .offset(offset)
-      .limit(limit)
-      .query
+    # Preload posts and topics to avoid N+1 queries
+    Draft.preload_data(stream, opts[:user])
+
+    stream
   end
 
   def self.cleanup!
@@ -187,22 +250,20 @@ class Draft < ActiveRecord::Base
     # remove old drafts
     delete_drafts_older_than_n_days = SiteSetting.delete_drafts_older_than_n_days.days.ago
     Draft.where("updated_at < ?", delete_drafts_older_than_n_days).destroy_all
+
+    UserStat.update_draft_count
   end
 
   def self.backup_draft(user, key, sequence, data)
     reply = JSON.parse(data)["reply"] || ""
     return if reply.length < SiteSetting.backup_drafts_to_pm_length
 
-    post_id = BackupDraftPost.where(user_id: user.id, key: key).pluck_first(:post_id)
+    post_id = BackupDraftPost.where(user_id: user.id, key: key).pick(:post_id)
     post = Post.where(id: post_id).first if post_id
 
-    if post_id && !post
-      BackupDraftPost.where(user_id: user.id, key: key).delete_all
-    end
+    BackupDraftPost.where(user_id: user.id, key: key).delete_all if post_id && !post
 
-    indented_reply = reply.split("\n").map! do |l|
-      "    #{l}"
-    end
+    indented_reply = reply.split("\n").map! { |l| "    #{l}" }
     draft_body = <<~MD
       #{indented_reply.join("\n")}
 
@@ -217,13 +278,14 @@ class Draft < ActiveRecord::Base
     if !post
       topic = ensure_draft_topic!(user)
       Post.transaction do
-        post = PostCreator.new(
-          user,
-          raw: draft_body,
-          skip_jobs: true,
-          skip_validations: true,
-          topic_id: topic.id,
-        ).create
+        post =
+          PostCreator.new(
+            user,
+            raw: draft_body,
+            skip_jobs: true,
+            skip_validations: true,
+            topic_id: topic.id,
+          ).create
         BackupDraftPost.create!(user_id: user.id, key: key, post_id: post.id)
       end
     elsif post.last_version_at > 5.minutes.ago
@@ -231,50 +293,52 @@ class Draft < ActiveRecord::Base
       post.update_columns(
         raw: draft_body,
         cooked: PrettyText.cook(draft_body),
-        updated_at: Time.zone.now
+        updated_at: Time.zone.now,
       )
     else
       revisor = PostRevisor.new(post, post.topic)
-      revisor.revise!(user, { raw: draft_body },
+      revisor.revise!(
+        user,
+        { raw: draft_body },
         bypass_bump: true,
         skip_validations: true,
         skip_staff_log: true,
-        bypass_rate_limiter: true
+        bypass_rate_limiter: true,
       )
     end
-
   rescue => e
     Discourse.warn_exception(e, message: "Failed to backup draft")
   end
 
   def self.ensure_draft_topic!(user)
-    topic_id = BackupDraftTopic.where(user_id: user.id).pluck_first(:topic_id)
+    topic_id = BackupDraftTopic.where(user_id: user.id).pick(:topic_id)
     topic = Topic.find_by(id: topic_id) if topic_id
 
-    if topic_id && !topic
-      BackupDraftTopic.where(user_id: user.id).delete_all
-    end
+    BackupDraftTopic.where(user_id: user.id).delete_all if topic_id && !topic
 
     if !topic
       Topic.transaction do
-        creator = PostCreator.new(
-          user,
-          title: I18n.t("draft_backup.pm_title"),
-          archetype: Archetype.private_message,
-          raw: I18n.t("draft_backup.pm_body"),
-          skip_jobs: true,
-          skip_validations: true,
-          target_usernames: user.username
-        )
+        creator =
+          PostCreator.new(
+            user,
+            title: I18n.t("draft_backup.pm_title"),
+            archetype: Archetype.private_message,
+            raw: I18n.t("draft_backup.pm_body"),
+            skip_jobs: true,
+            skip_validations: true,
+            target_usernames: user.username,
+          )
         topic = creator.create.topic
         BackupDraftTopic.create!(topic_id: topic.id, user_id: user.id)
       end
     end
 
     topic
-
   end
 
+  def update_draft_count
+    UserStat.update_draft_count(self.user_id)
+  end
 end
 
 # == Schema Information
@@ -287,7 +351,7 @@ end
 #  data       :text             not null
 #  created_at :datetime         not null
 #  updated_at :datetime         not null
-#  sequence   :integer          default(0), not null
+#  sequence   :bigint           default(0), not null
 #  revisions  :integer          default(1), not null
 #  owner      :string
 #

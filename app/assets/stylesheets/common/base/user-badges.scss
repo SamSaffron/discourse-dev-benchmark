@@ -1,13 +1,17 @@
 /* Default badge styles. */
+.show-badge {
+  background: var(--d-content-background);
+}
+
 .user-badge {
   padding: 3px 8px;
-  color: $primary;
-  border: 1px solid $primary-low;
-  line-height: $line-height-large;
+  color: var(--primary);
+  border: 1px solid var(--primary-low);
+  line-height: var(--line-height-large);
   display: inline-flex;
   align-items: center;
-  background-color: $secondary;
-  margin: 0 0 3px;
+  background-color: var(--secondary);
+  margin: 4px 0 0;
 
   img {
     height: 16px;
@@ -19,20 +23,20 @@
   }
 
   &.badge-type-gold .fa {
-    color: $gold !important;
+    color: var(--gold) !important;
   }
 
   &.badge-type-silver .fa {
-    color: $silver !important;
+    color: var(--silver) !important;
   }
 
   &.badge-type-bronze .fa {
-    color: $bronze !important;
+    color: var(--bronze) !important;
   }
 
   &.disabled {
-    color: $primary-medium;
-    background-color: $primary-very-low;
+    color: var(--primary-medium);
+    background-color: var(--primary-very-low);
     .fa {
       opacity: 0.4;
     }
@@ -70,7 +74,7 @@
 
 .show-badge .badge-user-info {
   .earned {
-    font-size: $font-up-2;
+    font-size: var(--font-up-2);
     margin-bottom: 1em;
   }
 }
@@ -81,7 +85,7 @@
   .load-more {
     padding-top: 30px;
     display: block;
-    font-size: $font-up-2;
+    font-size: var(--font-up-2);
   }
 }
 
@@ -96,11 +100,11 @@
   }
   .date {
     display: inline-block;
-    font-size: $font-up-1;
+    font-size: var(--font-up-1);
     margin-left: 10px;
   }
   .post-link {
-    font-size: $font-up-2;
+    font-size: var(--font-up-2);
     width: 500px;
     margin: 0;
     padding: 0;
@@ -121,53 +125,63 @@
 }
 
 .badge-card {
+  background-color: var(--primary-very-low);
+  border: 1px solid var(--primary-low);
   position: relative;
-  display: inline-block;
-  background-color: $primary-very-low;
-  border: 1px solid $primary-low;
-  margin-bottom: 2vh;
-  transition: box-shadow 0.25s;
 
   .check-display {
     position: absolute;
-    left: 5px;
+    right: 5px;
     top: 5px;
+  }
+
+  .badge-granted {
+    display: block;
+    margin-top: 0.5em;
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
   }
 
   .grant-count {
-    position: absolute;
-    right: 5px;
-    top: 5px;
     font-weight: bold;
-    color: $primary-medium;
-    font-size: $font-up-2;
+    color: var(--primary-medium);
+    line-height: 1;
   }
 
+  .grant-text {
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+  }
+
+  .favorite-btn {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+  }
   .badge-contents {
     display: flex;
-    min-height: 128px;
-    height: 100%;
-    padding: 0 10%;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.5em 1.5em;
 
     .badge-link {
-      color: $primary;
+      color: var(--primary);
     }
 
     .badge-icon {
       display: flex;
-      flex: 0 0 auto;
-      width: 1.23em;
-      margin-right: 5%;
+      flex-shrink: 0;
       align-items: center;
       justify-content: center;
-      font-size: 3.5em;
-      a {
-        width: 100%;
+
+      svg {
+        font-size: 3.5em;
       }
+
       img {
         width: 100%;
-        max-width: 65px;
-        max-height: 80px;
+        max-width: 64px;
+        max-height: 64px;
       }
 
       &.badge-type-gold .fa {
@@ -184,77 +198,47 @@
     }
 
     .badge-info {
-      display: flex;
-      flex: 1 1 auto;
-      align-items: center;
-      padding: 1em 1.5em 1em 0;
-      color: $primary;
-      @media screen and (max-width: 600px) {
-        padding-right: 0;
-      }
+      color: var(--primary);
 
       h3 {
         margin-bottom: 0.25em;
-        font-size: $font-up-1;
+        font-size: var(--font-up-1);
         @media screen and (min-width: 900px) {
-          font-size: $font-up-2;
+          font-size: var(--font-up-2);
         }
       }
     }
   }
 
-  &.medium {
-    flex: 0 0 auto;
-    width: 32%;
-    margin-right: 1.63%;
-    @media screen and (min-width: 851px) {
-      &:nth-of-type(3n) {
-        margin-right: 0;
-      }
-    }
-    @include breakpoint(medium) {
-      width: 48.5%;
-      &:nth-of-type(2n) {
-        margin-right: 0;
-      }
-    }
-    @include breakpoint(mobile-extra-large) {
-      flex: 0 0 100%;
-    }
-    &:hover {
-      box-shadow: shadow("card");
-    }
-    &:active {
-      box-shadow: none;
-    }
-  }
   &.large {
     width: 100%;
     align-self: flex-start;
+
     @media screen and (min-width: 767px) {
-      max-width: calc(#{$large-width} / 2);
-      margin-right: 1.5em;
+      max-width: calc(var(--d-max-width) / 2);
     }
+
     .badge-contents {
-      padding: 0 5%;
       h3 {
-        font-size: $font-up-3;
+        font-size: var(--font-up-3);
       }
     }
   }
 }
 
 .badges-granted {
-  display: flex;
-  flex-wrap: wrap;
-  @media screen and (max-width: $small-width) {
-    justify-content: space-between;
-  }
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18em, 1fr));
+  gap: 3em 2em;
+}
+
+.container.badges {
+  background: var(--d-content-background);
 }
 
 .badge-groups {
   margin: 20px 0;
-  color: dark-light-choose($primary-medium, $secondary-medium);
+  color: var(--primary-med-or-secondary-med);
   h3 {
     margin-bottom: 1em;
   }
@@ -267,16 +251,14 @@
 }
 
 .badge-group-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18em, 1fr));
+  grid-gap: 1em;
+  width: 100%;
   margin-bottom: 1.5em;
-  display: flex;
-  flex-wrap: wrap;
-  @include breakpoint(medium) {
-    justify-content: space-between;
-  }
 
   .title {
-    width: 100%;
-    font-size: $font-up-1;
+    font-size: var(--font-up-1);
   }
 }
 
@@ -286,6 +268,7 @@
   flex-direction: row;
   margin-bottom: 2em;
   margin-top: 1em;
+  gap: 1em;
 
   .badge-grant-info {
     &.hidden {
@@ -295,30 +278,49 @@
 
   .grant-info-item {
     margin-bottom: 1em;
-    color: dark-light-choose($primary-medium, $secondary-medium);
+    color: var(--primary-med-or-secondary-med);
     &:first-of-type {
       margin-right: 10px;
     }
   }
 
   .badge-set-title {
+    flex: 0 1 auto;
     padding: 1.5em;
-    border: 1px solid $primary-low;
+    border: 1px solid var(--primary-low);
 
-    .user-content {
-      padding: 0;
-      .control-group {
-        margin-bottom: 1em;
+    .badge-title {
+      height: 100%;
+      &__saved {
+        color: var(--success);
       }
     }
-  }
 
-  .badge-title .form-horizontal .controls {
-    margin-left: 0;
-  }
+    .control-group:last-child {
+      margin: auto 0 0;
+    }
 
-  .form-horizontal {
-    margin-bottom: 0;
+    .form-horizontal {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      margin: 0;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.5em;
+      margin: 0;
+      button:last-of-type {
+        margin-right: auto;
+      }
+    }
+
+    .combobox {
+      width: 100%;
+    }
   }
 }
 
@@ -329,16 +331,16 @@
   text-align: center;
   .fa {
     font-size: 0.9em;
-    color: $secondary;
+    color: var(--secondary);
   }
 }
 
 .check-display.status-checked {
-  background-color: $success;
+  background-color: var(--success);
 }
 
 .check-display.status-unchecked {
-  background-color: $danger;
+  background-color: var(--danger);
 }
 
 .hyperlink {

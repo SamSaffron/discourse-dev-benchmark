@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'distributed_cache'
+require "distributed_cache"
 
 class ApplicationSerializer < ActiveModel::Serializer
   embed :ids, include: true
@@ -9,13 +9,19 @@ class ApplicationSerializer < ActiveModel::Serializer
     def initialize(json)
       @json = json
     end
+
     def as_json(*_args)
       @json
     end
   end
 
-  def self.expire_cache_fragment!(name)
-    fragment_cache.delete(name)
+  def self.expire_cache_fragment!(name_or_regexp)
+    case name_or_regexp
+    when String
+      fragment_cache.delete(name_or_regexp)
+    when Regexp
+      fragment_cache.clear_regex(name_or_regexp)
+    end
   end
 
   def self.fragment_cache
@@ -24,8 +30,8 @@ class ApplicationSerializer < ActiveModel::Serializer
 
   protected
 
-  def cache_fragment(name)
-    ApplicationSerializer.fragment_cache[name] ||= yield
+  def cache_fragment(name, &block)
+    ApplicationSerializer.fragment_cache.defer_get_set(name, &block)
   end
 
   def cache_anon_fragment(name, &blk)

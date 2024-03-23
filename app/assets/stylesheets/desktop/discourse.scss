@@ -3,8 +3,16 @@
 // BEWARE: changing these styles implies they take effect anywhere they are seen
 // throughout the Discourse application
 
+:root {
+  --d-max-width: 1110px;
+}
+
 // Base Elements
 body.widget-dragging {
+  cursor: ns-resize;
+}
+
+body.dragging {
   cursor: ns-resize;
 }
 
@@ -22,13 +30,9 @@ body.widget-dragging {
   }
 }
 
-/***********************/
-/* bootstrap carryover */
-/***********************/
 code,
 pre {
-  font-family: Consolas, Menlo, Monaco, "Lucida Console", "Liberation Mono",
-    "DejaVu Sans Mono", "Bitstream Vera Sans Mono", "Courier New", monospace;
+  font-family: var(--d-font-family--monospace);
 }
 
 // this removes the unwanted top margin on a paragraph under a heading
@@ -44,7 +48,7 @@ h6 {
 }
 
 form {
-  margin: 0 0 18px;
+  margin: 0;
 }
 
 label,
@@ -52,53 +56,38 @@ input,
 button,
 select,
 textarea {
-  font-size: $font-0;
+  font-size: var(--font-0);
   font-weight: normal;
-  line-height: $line-height-medium;
+  line-height: var(--line-height-medium);
 }
 
 select,
 textarea {
   display: inline-block;
-  padding: 4px;
   margin-bottom: 9px;
-  font-size: $font-0;
-  line-height: $line-height-large;
-  color: $primary;
+  font-size: var(--font-0);
+  line-height: var(--line-height-large);
+  color: var(--primary);
 }
 
 input,
 textarea {
   width: 210px;
+  margin-left: 0;
 }
 
 select,
 input[type="file"] {
-  line-height: $line-height-large;
+  line-height: var(--line-height-large);
 }
 
 select {
   width: 220px;
-  background: $secondary;
+  background: var(--secondary);
 
   &[multiple],
   &[size] {
     height: auto;
-  }
-}
-
-input,
-textarea {
-  margin-left: 0;
-}
-
-input {
-  &[type="radio"],
-  &[type="checkbox"] {
-    &[disabled],
-    &[readonly] {
-      background-color: transparent;
-    }
   }
 }
 
@@ -114,97 +103,18 @@ input {
 }
 
 .control-instructions {
-  color: dark-light-choose($primary-medium, $secondary-medium);
+  color: var(--primary-medium);
   font-size: 0.875rem;
 }
 
 .control-group {
   margin-bottom: 9px;
-
-  &.warning,
-  &.error {
-    > label {
-      color: $danger;
-    }
-
-    .checkbox,
-    .radio,
-    input,
-    select,
-    textarea {
-      color: $danger;
-      border-color: $danger;
-
-      &:focus {
-        border-color: scale-color($danger, $lightness: -30%);
-        box-shadow: shadow("focus-danger");
-      }
-    }
-  }
-
-  &.warning {
-    .input-prepend,
-    .input-append {
-      .add-on {
-        color: $danger;
-        background-color: $danger;
-        border-color: $danger;
-      }
-    }
-  }
-
-  &.error {
-    .input-prepend,
-    .input-append {
-      .add-on {
-        color: $danger;
-        background-color: $danger-medium;
-        border-color: scale-color($danger, $lightness: -20%);
-      }
-    }
-  }
-
-  &.success {
-    > label {
-      color: $success;
-    }
-
-    .checkbox,
-    .radio,
-    input,
-    select,
-    textarea {
-      color: $success;
-      border-color: $success;
-
-      &:focus {
-        border-color: $success;
-        box-shadow: shadow("focus");
-      }
-    }
-
-    .input-prepend,
-    .input-append {
-      .add-on {
-        color: $success;
-        background-color: $success-low;
-        border-color: $success;
-      }
-    }
-  }
 }
 
 .form-horizontal {
-  .hide {
-    display: none;
-  }
-
-  input,
-  textarea,
-  select,
-  .input-prepend,
-  .input-append {
-    display: inline-block;
+  input[type="text"],
+  input[type="password"],
+  textarea {
     margin-bottom: 0;
   }
 
@@ -231,29 +141,6 @@ input {
   }
 }
 
-.bootbox.modal {
-  .modal-footer {
-    a.btn-primary {
-      color: $secondary;
-    }
-  }
-}
-
-/* bootstrap columns */
-.row {
-  @include clearfix;
-}
-
-.offset {
-  &2 {
-    margin-left: 116px;
-  }
-
-  &1 {
-    margin-left: 64px;
-  }
-}
-
 // Media Queries
 @media all and (max-width: 570px) {
   body {
@@ -263,5 +150,36 @@ input {
   .wrap,
   .full-width {
     min-width: 0;
+  }
+}
+
+body.has-sidebar-page {
+  .wrap {
+    // increase page max-width to accommodate sidebar width
+    max-width: calc(var(--d-sidebar-width) + var(--d-max-width));
+  }
+
+  #main-outlet-wrapper {
+    grid-template-columns: var(--d-sidebar-width) minmax(0, 1fr);
+    gap: 0 2em;
+    @include breakpoint(large) {
+      gap: 0 1em;
+    }
+    padding-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body.sidebar-animate {
+    #main-outlet-wrapper {
+      transition-property: grid-template-columns, max-width;
+      transition-timing-function: var(--d-sidebar-animation-ease);
+      transition-duration: var(--d-sidebar-animation-time);
+    }
+
+    .d-header-wrap .wrap {
+      transition: max-width var(--d-sidebar-animation-time)
+        var(--d-sidebar-animation-ease);
+    }
   }
 }

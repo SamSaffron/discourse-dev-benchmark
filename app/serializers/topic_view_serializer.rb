@@ -40,7 +40,9 @@ class TopicViewSerializer < ApplicationSerializer
     :pinned_globally,
     :pinned_at,
     :pinned_until,
-    :image_url
+    :image_url,
+    :slow_mode_seconds,
+    :external_id,
   )
 
   attributes(
@@ -61,20 +63,29 @@ class TopicViewSerializer < ApplicationSerializer
     :is_warning,
     :chunk_size,
     :bookmarked,
+    :bookmarks,
     :message_archived,
     :topic_timer,
-    :private_topic_timer,
     :unicode_title,
     :message_bus_last_id,
     :participant_count,
     :destination_category_id,
     :pm_with_non_human_user,
     :queued_posts_count,
-    :show_read_indicator
+    :show_read_indicator,
+    :requested_group_name,
+    :thumbnails,
+    :user_last_posted_at,
+    :is_shared_draft,
+    :slow_mode_enabled_until,
+    :summarizable,
   )
 
   has_one :details, serializer: TopicViewDetailsSerializer, root: false, embed: :objects
   has_many :pending_posts, serializer: TopicPendingPostSerializer, root: false, embed: :objects
+  has_many :categories, serializer: TopicCategorySerializer, embed: :objects
+
+  has_one :published_page, embed: :objects
 
   def details
     object
@@ -94,6 +105,10 @@ class TopicViewSerializer < ApplicationSerializer
 
   def include_is_warning?
     is_warning
+  end
+
+  def include_external_id?
+    external_id
   end
 
   def draft
@@ -182,20 +197,23 @@ class TopicViewSerializer < ApplicationSerializer
   end
 
   def bookmarked
-    object.topic_user&.bookmarked
+    object.has_bookmarks?
+  end
+
+  def bookmarks
+    object.bookmarks
   end
 
   def topic_timer
+    topic_timer = object.topic.public_topic_timer
+
+    return nil if topic_timer.blank?
+
+    if topic_timer.publishing_to_category?
+      return nil if !scope.can_see_category?(Category.find_by(id: topic_timer.category_id))
+    end
+
     TopicTimerSerializer.new(object.topic.public_topic_timer, root: false)
-  end
-
-  def include_private_topic_timer?
-    scope.user
-  end
-
-  def private_topic_timer
-    timer = object.topic.private_topic_timer(scope.user)
-    TopicTimerSerializer.new(timer, root: false)
   end
 
   def include_featured_link?
@@ -231,13 +249,18 @@ class TopicViewSerializer < ApplicationSerializer
   end
 
   def include_destination_category_id?
-    scope.can_create_shared_draft? &&
-      object.topic.category_id == SiteSetting.shared_drafts_category.to_i &&
+    scope.can_see_shared_draft? && SiteSetting.shared_drafts_enabled? &&
       object.topic.shared_draft.present?
   end
 
+  def is_shared_draft
+    include_destination_category_id?
+  end
+
+  alias_method :include_is_shared_draft?, :include_destination_category_id?
+
   def include_pending_posts?
-    scope.authenticated? && object.queued_posts_enabled
+    scope.authenticated? && object.queued_posts_enabled?
   end
 
   def queued_posts_count
@@ -245,10 +268,57 @@ class TopicViewSerializer < ApplicationSerializer
   end
 
   def include_queued_posts_count?
-    scope.is_staff? && object.queued_posts_enabled
+    scope.is_staff? && object.queued_posts_enabled?
   end
 
   def show_read_indicator
     object.show_read_indicator?
+  end
+
+  def requested_group_name
+    Group
+      .joins(:group_users)
+      .where(
+        id: object.topic.custom_fields["requested_group_id"].to_i,
+        group_users: {
+          user_id: scope.user.id,
+          owner: true,
+        },
+      )
+      .pick(:name)
+  end
+
+  def include_requested_group_name?
+    object.personal_message && object.topic.custom_fields["requested_group_id"]
+  end
+
+  def include_published_page?
+    SiteSetting.enable_page_publishing? && scope.is_staff? && object.published_page.present? &&
+      !SiteSetting.secure_uploads
+  end
+
+  def thumbnails
+    extra_sizes = ThemeModifierHelper.new(request: scope.request).topic_thumbnail_sizes
+    object.topic.thumbnail_info(enqueue_if_missing: true, extra_sizes: extra_sizes)
+  end
+
+  def user_last_posted_at
+    object.topic_user.last_posted_at
+  end
+
+  def include_user_last_posted_at?
+    has_topic_user? && object.topic.slow_mode_seconds.to_i > 0
+  end
+
+  def slow_mode_enabled_until
+    object.topic.slow_mode_topic_timer&.execute_at
+  end
+
+  def summarizable
+    object.summarizable?
+  end
+
+  def include_categories?
+    scope.can_lazy_load_categories?
   end
 end

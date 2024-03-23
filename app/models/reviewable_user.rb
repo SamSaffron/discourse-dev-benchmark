@@ -1,39 +1,25 @@
 # frozen_string_literal: true
 
 class ReviewableUser < Reviewable
-
   def self.create_for(user)
-    create(
-      created_by_id: Discourse.system_user.id,
-      target: user
-    )
+    create(created_by_id: Discourse.system_user.id, target: user)
+  end
+
+  def self.additional_args(params)
+    { reject_reason: params[:reject_reason], send_email: params[:send_email] != "false" }
   end
 
   def build_actions(actions, guardian, args)
     return unless pending?
 
-    if guardian.can_approve?(target) || args[:approved_by_invite]
+    if guardian.can_approve?(target)
       actions.add(:approve_user) do |a|
-        a.icon = 'user-plus'
+        a.icon = "user-plus"
         a.label = "reviewables.actions.approve_user.title"
       end
     end
 
-    reject = actions.add_bundle(
-      'reject_user',
-      icon: 'user-times',
-      label: 'reviewables.actions.reject_user.title'
-    )
-    actions.add(:reject_user_delete, bundle: reject) do |a|
-      a.icon = 'user-times'
-      a.label = "reviewables.actions.reject_user.delete.title"
-      a.description = "reviewables.actions.reject_user.delete.description"
-    end
-    actions.add(:reject_user_block, bundle: reject) do |a|
-      a.icon = 'ban'
-      a.label = "reviewables.actions.reject_user.block.title"
-      a.description = "reviewables.actions.reject_user.block.description"
-    end
+    delete_user_actions(actions, require_reject_reason: !is_a_suspect_user?)
   end
 
   def perform_approve_user(performed_by, args)
@@ -43,35 +29,43 @@ class ReviewableUser < Reviewable
     DiscourseEvent.trigger(:user_approved, target)
 
     if args[:send_email] != false && SiteSetting.must_approve_users?
-      Jobs.enqueue(
-        :critical_user_email,
-        type: :signup_after_approval,
-        user_id: target.id
-      )
+      Jobs.enqueue(:critical_user_email, type: "signup_after_approval", user_id: target.id)
     end
     StaffActionLogger.new(performed_by).log_user_approve(target)
 
     create_result(:success, :approved)
   end
 
-  def perform_reject_user_delete(performed_by, args)
+  def perform_delete_user(performed_by, args)
     # We'll delete the user if we can
     if target.present?
       destroyer = UserDestroyer.new(performed_by)
 
-      if reviewable_scores.any? { |rs| rs.reason == 'suspect_user' }
-        DiscourseEvent.trigger(:suspect_user_deleted, target)
-      end
+      DiscourseEvent.trigger(:suspect_user_deleted, target) if is_a_suspect_user?
 
       begin
+        self.reject_reason = args[:reject_reason]
+
+        if args[:send_email] && SiteSetting.must_approve_users?
+          # Execute job instead of enqueue because user has to exists to send email
+          Jobs::CriticalUserEmail.new.execute(
+            { type: :signup_after_reject, user_id: target.id, reject_reason: self.reject_reason },
+          )
+        end
+
         delete_args = {}
         delete_args[:block_ip] = true if args[:block_ip]
         delete_args[:block_email] = true if args[:block_email]
+        delete_args[:context] = if performed_by.id == Discourse.system_user.id
+          I18n.t("user.destroy_reasons.reviewable_reject_auto")
+        else
+          I18n.t("user.destroy_reasons.reviewable_reject")
+        end
 
         destroyer.destroy(target, delete_args)
-      rescue UserDestroyer::PostsExistError
-        # If a user has posts, we won't delete them to preserve their content.
-        # However the reviable record will be "rejected" and they will remain
+      rescue UserDestroyer::PostsExistError, Discourse::InvalidAccess
+        # If a user has posts or user is an admin, we won't delete them to preserve their content.
+        # However the reviewable record will be "rejected" and they will remain
         # unapproved in the database. A staff member can still approve them
         # via the admin.
       end
@@ -80,10 +74,10 @@ class ReviewableUser < Reviewable
     create_result(:success, :rejected)
   end
 
-  def perform_reject_user_block(performed_by, args)
+  def perform_delete_user_block(performed_by, args)
     args[:block_email] = true
     args[:block_ip] = true
-    perform_reject_user_delete(performed_by, args)
+    perform_delete_user(performed_by, args)
   end
 
   # Update's the user's fields for approval but does not save. This
@@ -93,6 +87,10 @@ class ReviewableUser < Reviewable
     user.approved_by ||= approved_by
     user.approved_at ||= Time.zone.now
   end
+
+  def is_a_suspect_user?
+    reviewable_scores.any? { |rs| rs.reason == "suspect_user" }
+  end
 end
 
 # == Schema Information
@@ -101,7 +99,7 @@ end
 #
 #  id                      :bigint           not null, primary key
 #  type                    :string           not null
-#  status                  :integer          default(0), not null
+#  status                  :integer          default("pending"), not null
 #  created_by_id           :integer          not null
 #  reviewable_by_moderator :boolean          default(FALSE), not null
 #  reviewable_by_group_id  :integer
@@ -117,13 +115,17 @@ end
 #  latest_score            :datetime
 #  created_at              :datetime         not null
 #  updated_at              :datetime         not null
+#  force_review            :boolean          default(FALSE), not null
+#  reject_reason           :text
 #
 # Indexes
 #
+#  idx_reviewables_score_desc_created_at_desc                  (score,created_at)
 #  index_reviewables_on_reviewable_by_group_id                 (reviewable_by_group_id)
 #  index_reviewables_on_status_and_created_at                  (status,created_at)
 #  index_reviewables_on_status_and_score                       (status,score)
 #  index_reviewables_on_status_and_type                        (status,type)
+#  index_reviewables_on_target_id_where_post_type_eq_post      (target_id) WHERE ((target_type)::text = 'Post'::text)
 #  index_reviewables_on_topic_id_and_status_and_created_by_id  (topic_id,status,created_by_id)
 #  index_reviewables_on_type_and_target_id                     (type,target_id) UNIQUE
 #

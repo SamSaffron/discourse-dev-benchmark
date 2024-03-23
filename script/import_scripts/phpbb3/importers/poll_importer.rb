@@ -5,10 +5,12 @@ module ImportScripts::PhpBB3
     # @param lookup [ImportScripts::LookupContainer]
     # @param database [ImportScripts::PhpBB3::Database_3_0 | ImportScripts::PhpBB3::Database_3_1]
     # @param text_processor [ImportScripts::PhpBB3::TextProcessor]
-    def initialize(lookup, database, text_processor)
+    # @param settings [ImportScripts::PhpBB3::Settings]
+    def initialize(lookup, database, text_processor, settings)
       @lookup = lookup
       @database = database
       @text_processor = text_processor
+      @settings = settings
     end
 
     # @param poll_data [ImportScripts::PhpBB3::PollData]
@@ -47,7 +49,12 @@ module ImportScripts::PhpBB3
     end
 
     def get_option_text(row)
-      text = @text_processor.process_raw_text(row[:poll_option_text])
+      text =
+        begin
+          @text_processor.process_raw_text(row[:poll_option_text])
+        rescue StandardError
+          row[:poll_option_text]
+        end
       text.squish!
       text.gsub!(/^(\d+)\./, '\1\.')
       text
@@ -55,23 +62,27 @@ module ImportScripts::PhpBB3
 
     # @param poll_data [ImportScripts::PhpBB3::PollData]
     def get_poll_text(poll_data)
-      title = @text_processor.process_raw_text(poll_data.title)
+      title =
+        begin
+          @text_processor.process_raw_text(poll_data.title)
+        rescue StandardError
+          poll_data.title
+        end
       text = +"#{title}\n\n"
 
       arguments = ["results=always"]
       arguments << "close=#{poll_data.close_time.iso8601}" if poll_data.close_time
 
       if poll_data.max_options > 1
-        arguments << "type=multiple" << "max=#{poll_data.max_options}"
+        arguments << "type=multiple" <<
+          "max=#{[poll_data.max_options, poll_data.options.count].min}"
       else
         arguments << "type=regular"
       end
 
-      text << "[poll #{arguments.join(' ')}]"
+      text << "[poll #{arguments.join(" ")}]"
 
-      poll_data.options.each do |option|
-        text << "\n* #{option[:text]}"
-      end
+      poll_data.options.each { |option| text << "\n* #{option[:text]}" }
 
       text << "\n[/poll]"
     end
@@ -102,9 +113,7 @@ module ImportScripts::PhpBB3
       poll.poll_options.each_with_index do |option, index|
         imported_option = poll_data.options[index]
 
-        imported_option[:ids].each do |imported_id|
-          option_ids[imported_id] = option.id
-        end
+        imported_option[:ids].each { |imported_id| option_ids[imported_id] = option.id }
       end
 
       option_ids
@@ -118,7 +127,7 @@ module ImportScripts::PhpBB3
 
       rows.each do |row|
         option_id = mapped_option_ids[row[:poll_option_id]]
-        user_id = @lookup.user_id_from_imported_user_id(row[:user_id])
+        user_id = @lookup.user_id_from_imported_user_id(@settings.prefix(row[:user_id]))
 
         if option_id.present? && user_id.present?
           PollVote.create!(poll: poll, poll_option_id: option_id, user_id: user_id)

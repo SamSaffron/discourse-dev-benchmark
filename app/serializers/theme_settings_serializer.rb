@@ -1,8 +1,17 @@
 # frozen_string_literal: true
 
 class ThemeSettingsSerializer < ApplicationSerializer
-  attributes :setting, :type, :default, :value, :description, :valid_values,
-             :list_type, :textarea
+  attributes :setting,
+             :type,
+             :default,
+             :value,
+             :description,
+             :objects_schema_property_descriptions,
+             :valid_values,
+             :list_type,
+             :textarea,
+             :json_schema,
+             :objects_schema
 
   def setting
     object.name
@@ -21,8 +30,29 @@ class ThemeSettingsSerializer < ApplicationSerializer
   end
 
   def description
-    locale_file_description = object.theme.internal_translations.find  { |t| t.key == "theme_metadata.settings.#{setting}" } &.value
+    description_regexp = /^theme_metadata\.settings\.#{setting}(\.description)?$/
+
+    locale_file_description =
+      object.theme.internal_translations.find { |t| t.key.match?(description_regexp) }&.value
+
     locale_file_description || object.description
+  end
+
+  def objects_schema_property_descriptions
+    locales = {}
+    key = "theme_metadata.settings.#{setting}.schema.properties."
+
+    object.theme.internal_translations.each do |internal_translation|
+      if internal_translation.key.start_with?(key)
+        locales[internal_translation.key.delete_prefix(key)] = internal_translation.value
+      end
+    end
+
+    locales
+  end
+
+  def include_objects_schema_property_descriptions?
+    include_objects_schema?
   end
 
   def valid_values
@@ -53,4 +83,19 @@ class ThemeSettingsSerializer < ApplicationSerializer
     object.type == ThemeSetting.types[:string]
   end
 
+  def objects_schema
+    object.schema
+  end
+
+  def include_objects_schema?
+    object.type == ThemeSetting.types[:objects]
+  end
+
+  def json_schema
+    object.json_schema
+  end
+
+  def include_json_schema?
+    object.type == ThemeSetting.types[:string] && object.json_schema.present?
+  end
 end

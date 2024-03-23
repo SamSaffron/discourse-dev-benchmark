@@ -1,14 +1,16 @@
 <div class='container unsubscribe'>
-  <%- if @not_found || @different_user %>
+  <%- if !@found || !@key_owner_found || @different_user %>
 
-    <%if @not_found%>
+    <%if !@found %>
       <p><%= t "unsubscribe.not_found_description" %></p>
+    <%- elsif !@key_owner_found %>
+      <p><%= t "unsubscribe.user_not_found_description" %></p>
     <%- else %>
       <p><%= t("unsubscribe.different_user_description").html_safe %></p>
       <%= form_tag(session_path(id: current_user.username_lower), method: :delete) do %>
         <%= hidden_field_tag(:return_url, @return_url) %>
         <%= submit_tag t('unsubscribe.log_out'), class: 'btn btn-danger' %>
-      <%- end%>
+      <%- end %>
     <%- end %>
   <%- else %>
     <br/>
@@ -37,7 +39,7 @@
           <p>
           <label>
             <%= check_box_tag 'unwatch_category' %>
-            <%= t('unsubscribe.unwatch_category', category: category_badge(@topic.category)).html_safe %>
+            <%= t('unsubscribe.unwatch_category', category: category_badge(@topic.category, show_uncategorized: true)).html_safe %>
           </label>
           </p>
         <% end %>
@@ -57,10 +59,14 @@
 
           <% if @digest_frequencies[:current] %>
             <h3>
-            <%= t(
-              'unsubscribe.digest_frequency.title',
-              frequency: t("unsubscribe.digest_frequency.#{@digest_frequencies[:current]}")
-            ) %>
+              <% if @digest_frequencies[:current] == 'never' %>
+                <%= t('unsubscribe.digest_frequency.never_title') %> 
+              <% else %>
+                <%= t(
+                  'unsubscribe.digest_frequency.title',
+                  frequency: t("unsubscribe.digest_frequency.#{@digest_frequencies[:current]}")
+                ) %>
+            <% end %>
             </h3>
             <br/>
           <% end %>
@@ -74,12 +80,16 @@
           </p>
       <% end %>
 
-      <p>
-      <label>
-      <%= check_box_tag 'unsubscribe_all', 1, @type=="all" %>
-      <%= t 'unsubscribe.all', sitename: SiteSetting.title %>
-      </label>
-      </p>
+      <%= server_plugin_outlet "unsubscribe_options" %>
+
+      <% unless @unsubscribed_from_all %>
+        <p>
+        <label>
+          <%= check_box_tag 'unsubscribe_all', 1, @type=="all" %>
+          <%= t 'unsubscribe.all', sitename: SiteSetting.title %>
+        </label>
+        </p>
+      <% end %>
 
       <br/>
       <% text = @type=='digest' ? t('unsubscribe.submit') : t('unsubscribe.title') %>

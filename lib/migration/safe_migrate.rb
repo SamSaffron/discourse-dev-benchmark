@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
-module Migration; end
+module Migration
+end
 
-class Discourse::InvalidMigration < StandardError; end
+class Discourse::InvalidMigration < StandardError
+end
 
 class Migration::SafeMigrate
   module SafeMigration
-    UNSAFE_VERSION = 20180321015220
     @@enable_safe = true
 
     def self.enable_safe!
@@ -18,11 +19,9 @@ class Migration::SafeMigrate
     end
 
     def migrate(direction)
-      if direction == :up &&
-         version && version > UNSAFE_VERSION &&
-         @@enable_safe != false &&
-         !is_post_deploy_migration?
-
+      if direction == :up && version &&
+           version > Migration::SafeMigrate.earliest_post_deploy_version &&
+           @@enable_safe != false && !is_post_deploy_migration?
         Migration::SafeMigrate.enable!
       end
 
@@ -34,16 +33,18 @@ class Migration::SafeMigrate
     private
 
     def is_post_deploy_migration?
+      instance_methods = self.class.instance_methods(false)
+
       method =
-        if self.respond_to?(:up)
+        if instance_methods.include?(:up)
           :up
-        elsif self.respond_to?(:change)
+        elsif instance_methods.include?(:change)
           :change
         end
 
-      self.method(method).source_location.first.include?(
-        Discourse::DB_POST_MIGRATE_PATH
-      )
+      return false if !method
+
+      self.method(method).source_location.first.include?(Discourse::DB_POST_MIGRATE_PATH)
     end
   end
 
@@ -55,6 +56,7 @@ class Migration::SafeMigrate
         def e.cause
           nil
         end
+
         def e.backtrace
           super.reject do |frame|
             frame =~ /safe_migrate\.rb/ || frame =~ /schema_migration_details\.rb/
@@ -73,6 +75,7 @@ class Migration::SafeMigrate
 
   def self.enable!
     return if PG::Connection.method_defined?(:exec_migrator_unpatched)
+    return if ENV["RAILS_ENV"] == "production"
 
     PG::Connection.class_eval do
       alias_method :exec_migrator_unpatched, :exec
@@ -92,6 +95,8 @@ class Migration::SafeMigrate
 
   def self.disable!
     return if !PG::Connection.method_defined?(:exec_migrator_unpatched)
+    return if ENV["RAILS_ENV"] == "production"
+
     PG::Connection.class_eval do
       alias_method :exec, :exec_migrator_unpatched
       alias_method :async_exec, :async_exec_migrator_unpatched
@@ -102,9 +107,9 @@ class Migration::SafeMigrate
   end
 
   def self.patch_active_record!
-    ActiveSupport.on_load(:active_record) do
-      ActiveRecord::Migration.prepend(SafeMigration)
-    end
+    return if ENV["RAILS_ENV"] == "production"
+
+    ActiveSupport.on_load(:active_record) { ActiveRecord::Migration.prepend(SafeMigration) }
 
     if defined?(ActiveRecord::Tasks::DatabaseTasks)
       ActiveRecord::Tasks::DatabaseTasks.singleton_class.prepend(NiceErrors)
@@ -112,8 +117,8 @@ class Migration::SafeMigrate
   end
 
   def self.protect!(sql)
-    if sql =~ /^\s*(?:drop\s+table|alter\s+table.*rename\s+to)\s+/i
-      $stdout.puts("", <<~STR)
+    if sql =~ /\A\s*(?:drop\s+table|alter\s+table.*rename\s+to)\s+/i
+      $stdout.puts("", <<~TEXT)
         WARNING
         -------------------------------------------------------------------------------------
         An attempt was made to drop or rename a table in a migration
@@ -123,10 +128,10 @@ class Migration::SafeMigrate
 
         This protection is in place to protect us against dropping tables that are currently
         in use by live applications.
-      STR
+      TEXT
       raise Discourse::InvalidMigration, "Attempt was made to drop a table"
-    elsif sql =~ /^\s*alter\s+table.*(?:rename|drop)\s+/i
-      $stdout.puts("", <<~STR)
+    elsif sql =~ /\A\s*alter\s+table.*(?:rename|drop(?!\s+not\s+null))\s+/i
+      $stdout.puts("", <<~TEXT)
         WARNING
         -------------------------------------------------------------------------------------
         An attempt was made to drop or rename a column in a migration
@@ -140,8 +145,17 @@ class Migration::SafeMigrate
 
         This protection is in place to protect us against dropping columns that are currently
         in use by live applications.
-      STR
+      TEXT
       raise Discourse::InvalidMigration, "Attempt was made to rename or delete column"
     end
+  end
+
+  def self.earliest_post_deploy_version
+    @@earliest_post_deploy_version ||=
+      begin
+        first_file = Dir.glob("#{Discourse::DB_POST_MIGRATE_PATH}/*.rb").sort.first
+        file_name = File.basename(first_file, ".rb")
+        file_name.first(14).to_i
+      end
   end
 end

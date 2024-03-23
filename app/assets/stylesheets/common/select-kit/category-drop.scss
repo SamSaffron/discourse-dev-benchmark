@@ -3,41 +3,20 @@
     &.category-drop {
       min-width: auto;
 
-      .badge-wrapper {
-        font-size: $font-0;
+      .badge-category__wrapper {
+        font-size: var(--font-0);
         font-weight: normal;
-
-        &.box {
-          margin: 0;
-
-          span.badge-category {
-            margin: 0;
-          }
-        }
-      }
-
-      &.bar.has-selection .category-drop-header {
-        padding: 0 5px 0 10px;
-      }
-
-      &.box.has-selection .category-drop-header {
-        .badge-wrapper.box {
-          padding: 0;
-        }
+        max-width: 260px;
       }
 
       .category-drop-header {
+        &[data-value=""] {
+          color: var(--primary-high);
+        }
+
         &.is-none .selected-name {
           color: inherit;
         }
-
-        .badge-wrapper {
-          margin-right: 0;
-        }
-      }
-
-      .select-kit-body {
-        min-width: 300px;
       }
 
       .select-kit-row {
@@ -46,13 +25,13 @@
 
         &[data-value="all-categories"],
         &[data-value="no-categories"] {
-          color: $tertiary;
+          color: var(--tertiary);
           font-weight: 700;
         }
 
         .category-desc {
           font-weight: normal;
-          color: $primary-medium;
+          color: var(--primary-medium);
           margin-top: 2px;
         }
 
@@ -61,23 +40,27 @@
         }
 
         .topic-count {
-          margin-left: 5px;
+          margin-left: 0.5em;
           font-weight: normal;
-        }
-
-        .badge-wrapper {
-          margin: 0;
-          font-weight: bold;
-
-          &:nth-child(2) {
-            margin-left: 10px;
-          }
+          color: var(--primary-medium);
+          font-size: var(--font-down-1);
         }
       }
 
-      &.is-expanded .select-kit-wrapper,
-      .select-kit-wrapper {
-        display: none;
+      .category-drop-footer {
+        align-items: center;
+        border-top: 1px solid var(--primary-low);
+        display: flex;
+        font-size: var(--font-down-1);
+        height: 30px;
+        justify-content: space-between;
+        width: 100%;
+
+        a,
+        span {
+          color: var(--primary-high);
+          margin: 0 10px;
+        }
       }
     }
   }

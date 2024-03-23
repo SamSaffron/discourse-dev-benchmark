@@ -1,19 +1,22 @@
 # frozen_string_literal: true
 
-require "read_only_header"
+require "read_only_mixin"
 
 class ForumsController < ActionController::Base
-  include ReadOnlyHeader
+  include ReadOnlyMixin
 
   before_action :check_readonly_mode
-  after_action  :add_readonly_header
+  after_action :add_readonly_header
 
   def status
-    if $shutdown # rubocop:disable Style/GlobalVars
-      render plain: "shutting down", status: 500
-    else
-      render plain: "ok"
+    if params[:cluster]
+      if GlobalSetting.cluster_name.nil?
+        return render plain: "cluster name not configured", status: 500
+      elsif GlobalSetting.cluster_name != params[:cluster]
+        return render plain: "cluster name does not match", status: 500
+      end
     end
-  end
 
+    render plain: "ok"
+  end
 end

@@ -4,35 +4,74 @@ class BookmarksController < ApplicationController
   requires_login
 
   def create
-    params.require(:post_id)
-
-    existing_bookmark = Bookmark.find_by(post_id: params[:post_id], user_id: current_user.id)
-    if existing_bookmark.present?
-      return render json: failed_json.merge(errors: [I18n.t("bookmarks.errors.already_bookmarked_post")]), status: 422
-    end
-
-    bookmark = Bookmark.create(
-      user_id: current_user.id,
-      topic_id: Post.select(:topic_id).find(params[:post_id]).topic_id,
-      post_id: params[:post_id],
-      name: params[:name],
-      reminder_type: Bookmark.reminder_types[params[:reminder_type].to_sym],
-      reminder_at: params[:reminder_at]
+    params.require(:bookmarkable_id)
+    params.require(:bookmarkable_type)
+    params.permit(
+      :bookmarkable_id,
+      :bookmarkable_type,
+      :name,
+      :reminder_at,
+      :auto_delete_preference,
     )
 
-    return render json: success_json if bookmark.save
-    render json: failed_json.merge(errors: bookmark.errors.full_messages), status: 400
+    RateLimiter.new(
+      current_user,
+      "create_bookmark",
+      SiteSetting.max_bookmarks_per_day,
+      1.day.to_i,
+    ).performed!
+
+    bookmark_manager = BookmarkManager.new(current_user)
+    bookmark =
+      bookmark_manager.create_for(
+        bookmarkable_id: params[:bookmarkable_id],
+        bookmarkable_type: params[:bookmarkable_type],
+        name: params[:name],
+        reminder_at: params[:reminder_at],
+        options: {
+          auto_delete_preference: params[:auto_delete_preference],
+        },
+      )
+
+    return render json: success_json.merge(id: bookmark.id) if bookmark_manager.errors.empty?
+
+    render json: failed_json.merge(errors: bookmark_manager.errors.full_messages), status: 400
   end
 
   def destroy
     params.require(:id)
+    destroyed_bookmark = BookmarkManager.new(current_user).destroy(params[:id])
+    render json:
+             success_json.merge(BookmarkManager.bookmark_metadata(destroyed_bookmark, current_user))
+  end
 
-    bookmark = Bookmark.find_by(id: params[:id])
-    raise Discourse::NotFound if bookmark.blank?
+  def update
+    params.require(:id)
+    params.permit(:id, :name, :reminder_at, :auto_delete_preference)
 
-    raise Discourse::InvalidAccess.new if !guardian.can_delete?(bookmark)
+    bookmark_manager = BookmarkManager.new(current_user)
+    bookmark_manager.update(
+      bookmark_id: params[:id],
+      name: params[:name],
+      reminder_at: params[:reminder_at],
+      options: {
+        auto_delete_preference: params[:auto_delete_preference],
+      },
+    )
 
-    bookmark.destroy
-    render json: success_json
+    return render json: success_json if bookmark_manager.errors.empty?
+
+    render json: failed_json.merge(errors: bookmark_manager.errors.full_messages), status: 400
+  end
+
+  def toggle_pin
+    params.require(:bookmark_id)
+
+    bookmark_manager = BookmarkManager.new(current_user)
+    bookmark_manager.toggle_pin(bookmark_id: params[:bookmark_id])
+
+    return render json: success_json if bookmark_manager.errors.empty?
+
+    render json: failed_json.merge(errors: bookmark_manager.errors.full_messages), status: 400
   end
 end

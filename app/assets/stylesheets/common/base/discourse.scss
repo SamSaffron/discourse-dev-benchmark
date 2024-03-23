@@ -3,18 +3,16 @@
 // BEWARE: changing these styles implies they take effect anywhere they are seen
 // throughout the Discourse application
 
-// Animation Keyframes
-@keyframes ping {
-  from {
-    transform: scale(0.25);
-    opacity: 1;
-  }
-  to {
-    transform: scale(2);
-    opacity: 0;
-  }
+:root {
+  --d-input-bg-color: var(--secondary);
+  --d-input-text-color: var(--primary);
+  --d-input-border: 1px solid var(--primary-400);
+  --d-input-bg-color--disabled: var(--primary-low);
+  --d-input-text-color--disabled: var(--primary);
+  --d-input-border--disabled: 1px solid var(--primary-low);
 }
 
+// Animation Keyframes
 @keyframes rotate-forever {
   0% {
     transform: rotate(0deg);
@@ -26,7 +24,7 @@
 
 @keyframes background-fade-highlight {
   0% {
-    background-color: $tertiary-low;
+    background-color: var(--tertiary-low);
   }
   100% {
     background-color: transparent;
@@ -43,19 +41,21 @@
   }
 }
 
-.placeholder-animation {
-  animation-duration: 4s;
-  animation-fill-mode: forwards;
-  animation-iteration-count: infinite;
-  animation-name: placeHolderShimmer;
-  animation-timing-function: linear;
-  background: $primary-very-low;
-  background: linear-gradient(
-    to right,
-    $primary-very-low 10%,
-    $primary-low 18%,
-    $primary-very-low 33%
-  );
+@media (prefers-reduced-motion: no-preference) {
+  .placeholder-animation {
+    animation-duration: 4s;
+    animation-fill-mode: forwards;
+    animation-iteration-count: infinite;
+    animation-name: placeHolderShimmer;
+    animation-timing-function: linear;
+    background: var(--primary-very-low);
+    background: linear-gradient(
+      to right,
+      var(--primary-very-low) 10%,
+      var(--primary-low) 18%,
+      var(--primary-very-low) 33%
+    );
+  }
 }
 
 // Base Elements
@@ -67,16 +67,17 @@ body {
   background-attachment: fixed;
   background-size: cover;
   min-height: 100%;
+  box-sizing: border-box;
 
   @include clearfix;
 }
 
 // setting a static limit on big and small prevents nesting abuse
 big {
-  font-size: $font-up-5;
+  font-size: var(--font-up-5);
 }
 small {
-  font-size: $font-down-2;
+  font-size: var(--font-down-2);
 }
 
 blockquote {
@@ -90,6 +91,7 @@ h3,
 h4,
 h5,
 h6 {
+  font-family: var(--heading-font-family);
   margin-top: 0;
   margin-bottom: 0.5rem;
 }
@@ -97,10 +99,10 @@ h6 {
 a.cancel {
   margin-left: 1.25em;
   line-height: normal;
-  color: $primary-high;
+  color: var(--primary-high);
   transition: color 250ms;
   &:hover {
-    color: $danger;
+    color: var(--danger);
   }
 }
 
@@ -123,13 +125,28 @@ span.relative-date {
   white-space: nowrap;
 }
 
+legend {
+  color: var(--primary-high);
+  font-weight: bold;
+}
+
 label {
   display: flex;
   margin-bottom: 5px;
   align-items: flex-start;
+  color: var(--primary-high);
+
+  &:not(.checkbox-label) {
+    font-weight: bold;
+  }
   > .d-icon {
     align-self: center;
     margin-right: 4px;
+  }
+  a {
+    // flex removes whitespace characters between text nodes and elements
+    // so we need to add it back
+    margin: 0 0.25em;
   }
 }
 
@@ -139,7 +156,7 @@ input {
     margin-top: 0.17em;
     margin-right: 0.43em;
     margin-left: 0.1em;
-    line-height: $line-height-small;
+    line-height: var(--line-height-small);
     cursor: pointer;
     flex-shrink: 0; // Adding for safety, Safari will shrink checkboxes
   }
@@ -152,45 +169,13 @@ input {
   }
 
   &.invalid {
-    background-color: dark-light-choose(
-      $danger-low,
-      scale-color($danger, $lightness: -60%)
-    );
+    background-color: var(--danger-low);
   }
 
   .radio &[type="radio"],
   .checkbox &[type="checkbox"] {
     float: left;
     margin-left: -18px;
-  }
-}
-
-input,
-select,
-textarea {
-  color: $primary;
-  caret-color: currentColor;
-
-  &[class*="span"] {
-    float: none;
-    margin-left: 0;
-  }
-
-  &[disabled],
-  &[readonly] {
-    cursor: not-allowed;
-    background-color: $primary-low;
-    border-color: $primary-low;
-  }
-
-  &:focus:required:invalid {
-    color: $danger;
-    border-color: $danger;
-  }
-
-  &:focus:required:invalid:focus {
-    border-color: $danger;
-    box-shadow: shadow("focus-danger");
   }
 }
 
@@ -210,92 +195,94 @@ input {
   &[type="tel"],
   &[type="color"] {
     @include appearance-none;
+    @include form-item-sizing;
     display: inline-block;
-    padding: $input-padding;
     margin-bottom: 9px;
-    font-size: $font-0;
-    line-height: $line-height-small;
-    color: $primary;
-    background-color: $secondary;
-    border: 1px solid $primary-medium;
-    border-radius: 0;
-    box-sizing: border-box;
-    min-height: 30px;
+    color: var(--d-input-text-color);
+    background-color: var(--d-input-bg-color);
+    border: var(--d-input-border);
+    border-radius: var(--d-input-border-radius);
     &:focus {
-      border-color: $tertiary;
-      box-shadow: shadow("focus");
-      outline: 0;
+      @include default-focus;
     }
+  }
+
+  &[type="time"] {
+    max-width: 140px;
   }
 }
 
-.input {
-  &-prepend,
-  &-append {
-    margin-bottom: 5px;
-    input[class*="span"] {
-      display: inline-block;
-    }
-    input,
-    select {
-      position: relative;
-      margin-bottom: 0;
-      vertical-align: middle;
-      border-radius: 0;
-      &:focus {
-        z-index: z("base") + 1;
-      }
-    }
-    .add-on {
-      display: inline-flex;
-      align-items: center;
-      width: auto;
-      padding: 0 0.5em;
-      height: 28px;
-      background-color: $primary-low;
-      border: 1px solid $primary-medium;
-    }
-    .add-on,
-    .btn {
-      &:first-child {
-        margin-right: -1px;
-      }
-      &:last-child {
-        margin-left: -1px;
-        border-radius: 0 3px 3px 0;
-      }
-    }
+input[type="search"] {
+  &::-webkit-search-cancel-button,
+  &::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
   }
+}
 
-  &-prepend {
-    .add-on,
-    .btn {
-      margin-right: -1px;
-    }
-  }
+// Fixes Safari height inconsistency
+::-webkit-datetime-edit {
+  display: inline;
+}
+
+// Fixes Webkit inconsistencies (Safari/Chrome)
+::-webkit-datetime-edit-fields-wrapper,
+::-webkit-datetime-edit-text,
+::-webkit-datetime-edit-month-field,
+::-webkit-datetime-edit-day-field,
+::-webkit-datetime-edit-year-field {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+::placeholder {
+  text-overflow: ellipsis;
 }
 
 textarea {
+  padding: $vpad $hpad;
+  box-sizing: border-box;
   height: auto;
-  background-color: $secondary;
-  border: 1px solid $primary-medium;
+  background-color: var(--secondary);
+  border: 1px solid var(--primary-400);
+  border-radius: 0;
+
   &:focus {
-    border-color: $tertiary;
-    box-shadow: shadow("focus");
-    outline: 0;
+    @include default-focus;
   }
 }
 
 select {
-  border: 1px solid $primary-low;
+  border: 1px solid var(--primary-low);
 }
 
 table {
   th {
     font-weight: normal;
-    color: $primary-medium;
+    color: var(--primary-medium);
     text-align: left;
     padding: 0.5em;
+  }
+}
+
+input,
+select,
+textarea {
+  color: var(--d-input-text-color);
+  caret-color: currentColor;
+
+  &[disabled],
+  &[readonly] {
+    cursor: not-allowed;
+    color: var(--d-input-text-color--disabled);
+    background-color: var(--d-input-bg-color--disabled);
+    border: var(--d-input-border--disabled);
+  }
+
+  &:focus:required:invalid {
+    color: var(--danger);
+    border-color: var(--danger);
+    outline: 1px solid var(--danger);
   }
 }
 
@@ -303,16 +290,17 @@ table {
 
 .sortable {
   white-space: nowrap;
-  cursor: pointer;
   .discourse-no-touch & {
-    &:hover {
-      background-color: $primary-low;
+    &:hover,
+    &:focus {
+      background-color: var(--primary-low);
     }
   }
   .d-icon {
     margin-left: 0.25em;
   }
   @include unselectable;
+  cursor: pointer;
 }
 
 .radio,
@@ -342,11 +330,11 @@ table {
 }
 
 .wrap {
-  @extend .clearfix;
+  --d-wrap-padding-h: 10px;
+  max-width: var(--d-max-width);
   margin-right: auto;
   margin-left: auto;
-  padding: 0 8px;
-
+  padding: 0 var(--d-wrap-padding-h);
   .contents {
     position: relative;
   }
@@ -354,43 +342,12 @@ table {
 
 .boxed {
   &.white {
-    background-color: $secondary;
+    background-color: var(--secondary);
   }
 }
 
 .full-width {
   margin-left: 12px;
-}
-
-// the default for table cells in topic list
-// is $primary-medium
-// numbers get dimmer as they get colder
-.coldmap {
-  &-high {
-    color: dark-light-choose($primary-low-mid, $secondary-high) !important;
-  }
-
-  &-med {
-    color: dark-light-choose($primary-medium, $secondary-high) !important;
-  }
-
-  &-low {
-    color: dark-light-choose($primary-medium, $secondary-medium) !important;
-  }
-}
-
-.top-space {
-  margin-top: 10px;
-}
-
-.message {
-  border-radius: 8px;
-  background-color: $secondary;
-  padding: 14px;
-
-  h2 {
-    margin-bottom: 20px;
-  }
 }
 
 .clear-transitions {
@@ -400,90 +357,135 @@ table {
 .tip {
   display: inline-block;
   &.good {
-    color: $success;
+    color: var(--success);
   }
   &.bad {
-    color: $danger;
+    color: var(--danger);
   }
 }
 
 .avatar-wrapper {
-  background-color: $secondary;
+  background-color: var(--secondary);
   display: inline-block;
   border-radius: 50%;
 }
 
-.profiler-results.profiler-left {
-  top: 60px !important;
-}
-
-.flex-center-align {
-  display: flex;
-  align-items: center;
-}
-
-.unread-private-messages {
-  color: $secondary;
-  background: $success;
+.unread-high-priority-notifications {
+  color: var(--secondary);
+  background: var(--success);
 
   &.badge-notification[href] {
-    color: $secondary;
+    color: var(--secondary);
   }
 }
 
-.ring-backdrop-spotlight {
+.d-header .header-dropdown-toggle .do-not-disturb-background {
   position: absolute;
-  width: 80px;
-  height: 80px;
-  top: -18px;
-  right: -18px;
-  background-image: radial-gradient(
-    40px at 50% 50%,
-    transparent 95%,
-    $primary 100%
-  );
-  opacity: 0.85;
+  left: 0;
+  bottom: -1px;
 }
 
-.ring-backdrop {
-  position: absolute;
-  width: 80px;
-  height: 80px;
-  top: -18px !important;
-  right: -18px !important;
-  box-shadow: 0 0 0 9999px rgba($primary, 0.85);
-  z-index: z("modal", "overlay");
+.do-not-disturb-background {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25em;
+  background-color: var(--secondary);
+  border-radius: 50%;
+  height: 1.25em;
+
+  .d-icon.d-icon-discourse-dnd {
+    color: var(--header_primary-medium) !important;
+    font-size: 1em;
+    height: 1em;
+    width: 1em;
+  }
 }
 
-.ring-first-notification {
+.d-header .header-dropdown-toggle .user-status-background {
   position: absolute;
-  color: $secondary;
+  right: -3px;
+  bottom: -1px;
+  z-index: 1002;
+}
+
+.user-status-background {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25em;
+  height: 1.25em;
+  background-color: var(--secondary);
+  border-radius: 50%;
+
+  .emoji {
+    width: 14px;
+    height: 14px;
+    display: block;
+  }
+}
+
+.user-menu .quick-access-panel li.user-status .relative-date {
   text-align: left;
-  right: 70px;
-  top: 60px;
-  width: 230px;
-  line-height: $line-height-medium;
+  font-size: var(--font-down-3);
+  padding-top: 0.45em;
+  margin-left: 0.75em;
+  color: var(--primary-medium);
 }
 
-.ring {
-  $gradient-start: transparent;
-  $gradient-end: #090;
-  background: -webkit-radial-gradient($gradient-start, $gradient-end);
-  background: -o-radial-gradient($gradient-start, $gradient-end);
-  background: -moz-radial-gradient($gradient-start, $gradient-end);
-  background: radial-gradient($gradient-start, $gradient-end);
-  top: -11px !important;
-  right: 23.5px !important;
-  border-radius: 100%;
-  width: 20px;
-  height: 20px;
-  -moz-animation-iteration-count: infinite;
-  -webkit-animation-iteration-count: infinite;
-  -webkit-transform-origin: center;
-  -moz-animation-duration: 3s;
-  -webkit-animation-duration: 3s;
-  -moz-animation-name: ping;
-  -webkit-animation-name: ping;
+.user-menu .quick-access-panel li.do-not-disturb {
+  display: flex;
+  flex: 0 0 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  background: var(--secondary);
+
+  .do-not-disturb-inner-container {
+    display: flex;
+    width: 100%;
+    align-items: center;
+
+    .do-not-disturb-label {
+      display: flex;
+      align-items: center;
+    }
+
+    .relative-date {
+      text-align: left;
+      font-size: var(--font-down-3);
+      padding-top: 3px;
+      margin-left: 0.75em;
+      color: var(--primary-medium);
+    }
+
+    .d-icon-toggle-off,
+    .d-icon-toggle-on {
+      padding-top: 0;
+    }
+
+    .d-icon-toggle-on {
+      color: var(--tertiary);
+    }
+  }
+}
+
+.do-not-disturb-modal {
+  .do-not-disturb-choice {
+    display: grid;
+    grid-template-columns: 2em 1fr auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    cursor: pointer;
+    padding: 0.5em 0;
+
+    &:hover {
+      background-color: var(--tertiary-low);
+    }
+
+    label {
+      margin-bottom: 0;
+    }
+  }
 }
 
 .fade {
@@ -507,7 +509,7 @@ table {
   animation: rotate-forever 1s infinite linear;
   height: 30px;
   width: 30px;
-  border: 4px solid blend-primary-secondary(50%);
+  border: 4px solid var(--primary-low-mid);
   border-right-color: transparent;
   border-radius: 50%;
 
@@ -521,8 +523,8 @@ table {
 
 .content-list {
   h3 {
-    color: $primary-medium;
-    font-size: $font-up-1;
+    color: var(--primary-medium);
+    font-size: var(--font-up-1);
     padding-left: 5px;
     margin-bottom: 10px;
   }
@@ -532,25 +534,26 @@ table {
     margin: 0;
 
     li {
-      border-bottom: 1px solid $primary-low;
+      border-bottom: 1px solid var(--primary-low);
 
       &:first-of-type {
-        border-top: 1px solid $primary-low;
+        border-top: 1px solid var(--primary-low);
       }
 
       a {
         display: block;
         padding: 10px;
-        color: $primary;
+        color: var(--primary);
 
         &:hover {
-          background-color: $primary-low;
-          color: $primary;
+          background-color: var(--primary-low);
+          color: var(--primary);
         }
 
         &.active {
           font-weight: bold;
-          color: $primary;
+          color: var(--primary);
+          background: var(--d-selected);
         }
       }
     }
@@ -560,31 +563,51 @@ table {
 .form-vertical {
   input,
   textarea,
-  select,
-  .input-prepend,
-  .input-append {
+  select {
     display: inline-block;
     margin-bottom: 0;
     flex: 0 0 auto;
+    max-width: 100%;
   }
 
-  .control-group {
-    @include clearfix;
-  }
-
-  .control-label {
+  .control-label:not(.checkbox-label) {
+    font-family: var(--heading-font-family);
     font-weight: bold;
-    font-size: $font-up-2;
-    line-height: $line-height-large;
+    font-size: var(--font-up-2);
+    line-height: var(--line-height-large);
   }
 
+  .control-group,
   .controls {
     margin-left: 0;
+    label {
+      font-weight: normal;
+    }
   }
 }
 
 // Special elements
-// Special elements
+
+#main-outlet-wrapper {
+  box-sizing: border-box;
+  width: 100%;
+  display: grid;
+  grid-template-areas:
+    "sidebar content"
+    "sidebar below-content";
+  grid-template-rows: 1fr auto;
+  grid-template-columns: 0 minmax(0, 1fr); // 0 column width needs to be set for CSS transitions
+  gap: 0;
+
+  #main-outlet {
+    grid-area: content;
+  }
+}
+
+#main-outlet {
+  padding-top: 1.5em;
+}
+
 #main {
   img.avatar {
     &.header {
@@ -617,11 +640,11 @@ table {
 
 #loading-message {
   position: absolute;
-  font-size: $font-up-5;
+  font-size: var(--font-up-5);
   text-align: center;
   top: 120px;
   left: 500px;
-  color: $primary;
+  color: var(--primary);
 }
 
 #footer {
@@ -630,7 +653,7 @@ table {
     .contents {
       padding-top: 10px;
       a[href] {
-        color: $secondary;
+        color: var(--secondary);
       }
     }
   }
@@ -640,7 +663,7 @@ table {
   display: inline;
 }
 
-.pref-auth-tokens {
+.pref-email {
   .row {
     border-bottom: 1px solid #ddd;
     margin: 5px 0px;
@@ -651,31 +674,24 @@ table {
     }
   }
 
-  .auth-token-icon {
-    color: $primary-medium;
-    font-size: 2.25em;
-    float: left;
-    margin-right: 10px;
-  }
-
-  .auth-token-first {
+  .email-first {
     font-size: 1.1em;
+  }
 
-    .auth-token-device {
+  .email-second {
+    color: var(--primary-medium);
+
+    .primary {
+      color: var(--success);
       font-weight: bold;
+    }
+
+    .unconfirmed {
+      font-style: italic;
     }
   }
 
-  .auth-token-second {
-    color: $primary-medium;
-
-    .active {
-      color: $success;
-      font-weight: bold;
-    }
-  }
-
-  .auth-token-dropdown {
+  .email-dropdown {
     float: right;
 
     .btn,
@@ -683,7 +699,7 @@ table {
       background: transparent;
 
       .d-icon {
-        color: $primary-high;
+        color: var(--primary-high);
       }
     }
   }
@@ -698,33 +714,81 @@ table {
 }
 
 .topic-statuses {
-  display: inline;
+  // avoid adding margin/padding on this parent; sometimes it appears as an empty container
   float: left;
-  margin-right: 0.15em;
   .topic-status {
     margin: 0;
     display: inline-flex;
-    color: $primary-medium;
+    color: var(--primary-medium);
+    margin-right: 0.2em;
     .d-icon {
-      height: 0.76em;
+      height: 0.74em;
       width: 0.75em;
-    }
-    &:not(:last-child) {
-      margin-right: 0.15em;
     }
   }
 
   .topic-status-warning .d-icon-envelope {
-    color: $danger;
+    color: var(--danger);
   }
 }
 
-.broken-theme-alert {
-  font-size: $base-font-size;
+.broken-theme-alert-banner {
+  font-size: var(--base-font-size);
   font-weight: bold;
   padding: 5px 0;
-  background: $danger-medium;
+  background: var(--danger);
   text-align: center;
   z-index: z("max");
-  color: $secondary;
+  color: var(--secondary);
+
+  a {
+    color: var(--secondary);
+    text-decoration: underline;
+  }
+
+  .theme-error-suffix {
+    font-weight: normal;
+  }
+}
+
+.controls {
+  .grouped-control {
+    display: flex;
+    flex-direction: column;
+
+    .grouped-control-label {
+      padding: 0.25em 0;
+    }
+
+    .grouped-control-field {
+      flex: 1 0 auto;
+      display: flex;
+      padding-bottom: 0.25em;
+
+      label {
+        margin: 0;
+      }
+    }
+  }
+}
+
+a#user-nav-skip-link,
+a#skip-link {
+  padding: 0.25em 0.5em;
+  position: fixed;
+  top: -50px;
+  left: 1em;
+  color: var(--secondary);
+  background: var(--tertiary);
+  transition: top 0.3s ease-out;
+  z-index: z("header") + 1;
+  &:focus {
+    top: 0px;
+    transition: top 0.15s ease-in;
+  }
+}
+
+.scroll-lock {
+  overflow: hidden !important;
+  margin-right: var(--scroll-gap, 0);
 }

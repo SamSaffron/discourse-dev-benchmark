@@ -1,34 +1,21 @@
 # frozen_string_literal: true
 
-require 'mysql2'
+require "mysql2"
 require File.expand_path(File.dirname(__FILE__) + "/base.rb")
-require 'htmlentities'
-begin
-  require 'php_serialize' # https://github.com/jqr/php-serialize
-rescue LoadError
-  puts
-  puts 'php_serialize not found.'
-  puts 'Add to Gemfile, like this: '
-  puts
-  puts "echo gem \\'php-serialize\\' >> Gemfile"
-  puts "bundle install"
-  exit
-end
+require "htmlentities"
+require "php_serialize" # https://github.com/jqr/php-serialize
 
 class ImportScripts::Question2Answer < ImportScripts::Base
   BATCH_SIZE = 1000
 
   # CHANGE THESE BEFORE RUNNING THE IMPORTER
 
-  DB_HOST ||= ENV['DB_HOST'] || "localhost"
-  DB_NAME ||= ENV['DB_NAME']
-  DB_PW ||= ENV['DB_PW']
-  DB_USER ||= ENV['DB_USER']
-  TIMEZONE ||= ENV['TIMEZONE'] || "America/Los_Angeles"
-  TABLE_PREFIX ||= ENV['TABLE_PREFIX'] || "qa_"
-  MAIN_APP_DB_NAME = "primary_db"
-
-  puts "#{DB_USER}:#{DB_PW}@#{DB_HOST} wants #{DB_NAME}"
+  DB_HOST ||= ENV["DB_HOST"] || "localhost"
+  DB_NAME ||= ENV["DB_NAME"] || "qa_db"
+  DB_PW ||= ENV["DB_PW"] || ""
+  DB_USER ||= ENV["DB_USER"] || "root"
+  TIMEZONE ||= ENV["TIMEZONE"] || "America/Los_Angeles"
+  TABLE_PREFIX ||= ENV["TABLE_PREFIX"] || "qa_"
 
   def initialize
     super
@@ -39,34 +26,8 @@ class ImportScripts::Question2Answer < ImportScripts::Base
 
     @htmlentities = HTMLEntities.new
 
-    @client = Mysql2::Client.new(
-      host: DB_HOST,
-      username: DB_USER,
-      password: DB_PW,
-      database: DB_NAME
-    )
-    rescue Exception => e
-      puts '=' * 50
-      puts e.message
-      puts <<EOM
-Cannot connect in to database.
-
-Hostname: #{DB_HOST}
-Username: #{DB_USER}
-Password: #{DB_PW}
-database: #{DB_NAME}
-
-Edit the script or set these environment variables:
-
-export DB_HOST="localhost"
-export DB_NAME=""
-export DB_PW='password'
-export DB_USER="root"
-export TABLE_PREFIX="qa_"
-
-Exiting.
-EOM
-      exit
+    @client =
+      Mysql2::Client.new(host: DB_HOST, username: DB_USER, password: DB_PW, database: DB_NAME)
   end
 
   def execute
@@ -75,6 +36,7 @@ EOM
     import_topics
     import_posts
     import_likes
+    import_bestanswer
 
     post_process_posts
     create_permalinks
@@ -83,23 +45,25 @@ EOM
   def import_users
     puts "", "importing users"
 
-    #only import users that have posted or voted on Q2A
-    user_count = mysql_query("SELECT COUNT(id) count FROM #{MAIN_APP_DB_NAME}.users u WHERE EXISTS (SELECT 1 FROM #{TABLE_PREFIX}posts p WHERE p.userid=u.id) or EXISTS (SELECT 1 FROM #{TABLE_PREFIX}uservotes u WHERE u.userid=u.id)").first["count"]
+    # only import users that have posted or voted on Q2A
+    # if you want to import all users, just leave out the WHERE and everything after it (and remove line 95 as well)
+    user_count =
+      mysql_query(
+        "SELECT COUNT(userid) count FROM #{TABLE_PREFIX}users u WHERE EXISTS (SELECT 1 FROM #{TABLE_PREFIX}posts p WHERE p.userid=u.userid) or EXISTS (SELECT 1 FROM #{TABLE_PREFIX}uservotes uv WHERE u.userid=uv.userid)",
+      ).first[
+        "count"
+      ]
     last_user_id = -1
 
     batches(BATCH_SIZE) do |offset|
-      users = mysql_query(<<-SQL
-          SELECT u.id, u.email, first_name, last_name, u.created_at, last_sign_in_at, u.custom_field_1, u.website website, u.city city, u.state state, i.cdn_slug cdn_slug
-            FROM #{MAIN_APP_DB_NAME}.users u
-            LEFT JOIN #{MAIN_APP_DB_NAME}.images i
-            ON i.id=u.image_id
-           WHERE u.id > #{last_user_id} AND
-           (EXISTS (SELECT 1 FROM #{TABLE_PREFIX}posts p WHERE p.userid=u.id) or EXISTS (SELECT 1 FROM #{TABLE_PREFIX}uservotes u WHERE u.userid=u.id))
-        ORDER BY u.id
-           LIMIT #{BATCH_SIZE}
+      users = mysql_query(<<-SQL).to_a
+        SELECT u.userid AS id, u.email, u.handle AS username, u.created AS created_at, u.loggedin AS last_sign_in_at, u.avatarblobid
+             FROM #{TABLE_PREFIX}users u
+            WHERE u.userid > #{last_user_id}
+              AND (EXISTS (SELECT 1 FROM #{TABLE_PREFIX}posts p WHERE p.userid=u.userid) or EXISTS (SELECT 1 FROM #{TABLE_PREFIX}uservotes uv WHERE u.userid=uv.userid))
+         ORDER BY u.userid
+            LIMIT #{BATCH_SIZE}
       SQL
-      ).to_a
-
       break if users.empty?
 
       last_user_id = users[-1]["id"]
@@ -109,21 +73,17 @@ EOM
         email = user["email"].presence
 
         username = @htmlentities.decode(user["email"]).strip.split("@").first
-        avatar_url = "https://your_image_bucket/#{user['cdn_slug']}" if user['cdn_slug']
+        avatar_url = "https://your_image_bucket/#{user["cdn_slug"]}" if user["cdn_slug"]
         {
           id: user["id"],
-          name: "#{user['first_name']} #{user['last_name']}",
-          username: username,
-          website: user['website'],
+          name: "#{user["username"]}",
+          username: "#{user["username"]}",
+          password: user["password"],
           email: email,
-          avatar_url: avatar_url,
-          custom_fields: user["custom_field_1"] ? { user_field_1: user["custom_field_1"] } : {},
-          location: user["city"] && user["state"] ? "#{user['city']}, #{user['state']}" : nil,
           created_at: user["created_at"],
           last_seen_at: user["last_sign_in_at"],
-          post_create_action: proc do |u|
-            @old_username_to_new_usernames[user["username"]] = u.username
-          end
+          post_create_action:
+            proc { |u| @old_username_to_new_usernames[user["username"]] = u.username },
         }
       end
     end
@@ -132,7 +92,10 @@ EOM
   def import_categories
     puts "", "importing top level categories..."
 
-    categories = mysql_query("SELECT categoryid, parentid, title, position FROM #{TABLE_PREFIX}categories ORDER BY categoryid").to_a
+    categories =
+      mysql_query(
+        "SELECT categoryid, parentid, title, position FROM #{TABLE_PREFIX}categories ORDER BY categoryid",
+      ).to_a
 
     top_level_categories = categories.select { |c| c["parentid"].nil? }
 
@@ -140,7 +103,7 @@ EOM
       {
         id: category["categoryid"],
         name: @htmlentities.decode(category["title"]).strip,
-        position: category["position"]
+        position: category["position"],
       }
     end
 
@@ -161,7 +124,7 @@ EOM
         id: category["categoryid"],
         name: @htmlentities.decode(category["title"]).strip,
         position: category["position"],
-        parent_category_id: category_id_from_imported_category_id(category["parentid"])
+        parent_category_id: category_id_from_imported_category_id(category["parentid"]),
       }
     end
   end
@@ -169,26 +132,28 @@ EOM
   def import_topics
     puts "", "importing topics..."
 
-    topic_count = mysql_query("SELECT COUNT(postid) count FROM #{TABLE_PREFIX}posts WHERE type in ('Q', 'Q_HIDDEN')").first["count"]
+    topic_count =
+      mysql_query("SELECT COUNT(postid) count FROM #{TABLE_PREFIX}posts WHERE type = 'Q'").first[
+        "count"
+      ]
 
     last_topic_id = -1
 
     batches(BATCH_SIZE) do |offset|
-      topics = mysql_query(<<-SQL
+      topics = mysql_query(<<-SQL).to_a
           SELECT p.postid, p.type, p.categoryid, p.closedbyid, p.userid postuserid, p.views, p.created, p.title, p.content raw
             FROM #{TABLE_PREFIX}posts p
-           WHERE p.postid > #{last_topic_id}
-           and p.parentid IS NULL
-           and type IN ('Q', 'Q_HIDDEN')
+           WHERE type = 'Q'
+             AND p.postid > #{last_topic_id}
         ORDER BY p.postid
            LIMIT #{BATCH_SIZE}
       SQL
-      ).to_a
 
       break if topics.empty?
 
       last_topic_id = topics[-1]["postid"]
       topics.reject! { |t| @lookup.post_already_imported?("thread-#{t["postid"]}") }
+      topics.reject! { |t| t["type"] == "Q_HIDDEN" }
 
       create_posts(topics, total: topic_count, offset: offset) do |topic|
         begin
@@ -205,7 +170,7 @@ EOM
           category: category_id_from_imported_category_id(topic["categoryid"]),
           raw: raw,
           created_at: topic["created"],
-          visible: topic["closedbyid"].to_i == 0 && topic["type"] != 'Q_HIDDEN',
+          visible: topic["closedbyid"].to_i == 0,
           views: topic["views"],
         }
         t
@@ -217,21 +182,20 @@ EOM
         topic = topic_lookup_from_imported_post_id(topic_id)
         if topic.present?
           title_slugified = slugify(thread["title"], false, 50) if thread["title"].present?
-          url_slug = "#{thread["postid"]}/#{title_slugified}" if thread["title"].present?
-          Permalink.create(url: url_slug, topic_id: topic[:topic_id].to_i) if url_slug.present? && topic[:topic_id].present?
+          url_slug = "qa/#{thread["postid"]}/#{title_slugified}" if thread["title"].present?
+          if url_slug.present? && topic[:topic_id].present?
+            Permalink.create(url: url_slug, topic_id: topic[:topic_id].to_i)
+          end
         end
       end
-
     end
   end
 
   def slugify(title, ascii_only, max_length)
-    words = title.downcase.gsub(/[^a-zA-Z0-9\s]/, '').split(" ")
+    words = title.downcase.gsub(/[^a-zA-Z0-9\s]/, "").split(" ")
     word_lengths = {}
 
-    words.each_with_index do |word, idx|
-      word_lengths[idx] = word.length
-    end
+    words.each_with_index { |word, idx| word_lengths[idx] = word.length }
 
     remaining = max_length
     if word_lengths.inject(0) { |sum, (_, v)| sum + v } > remaining
@@ -250,27 +214,27 @@ EOM
   def import_posts
     puts "", "importing posts..."
 
-    post_count = mysql_query(<<-SQL
+    post_count = mysql_query(<<-SQL).first["count"]
       SELECT COUNT(postid) count
         FROM #{TABLE_PREFIX}posts p
        WHERE p.parentid IS NOT NULL
     SQL
-    ).first["count"]
 
     last_post_id = -1
 
     batches(BATCH_SIZE) do |offset|
-      posts = mysql_query(<<-SQL
-          SELECT p.postid, p.type, p.parentid, p.categoryid, p.closedbyid, p.userid, p.views, p.created, p.title, p.content
+      posts = mysql_query(<<-SQL).to_a
+          SELECT p.postid, p.type, p.parentid, p.categoryid, p.closedbyid, p.userid, p.views, p.created, p.title, p.content,
+                parent.type AS parenttype, parent.parentid AS qid
             FROM #{TABLE_PREFIX}posts p
+       LEFT JOIN qa_posts parent ON parent.postid = p.parentid
            WHERE p.parentid IS NOT NULL
              AND p.postid > #{last_post_id}
-             AND type in ('A')
-             AND closedbyid IS NULL
+             AND p.type in ('A','C')
+             AND p.closedbyid IS NULL
         ORDER BY p.postid
            LIMIT #{BATCH_SIZE}
       SQL
-      ).to_a
 
       break if posts.empty?
       last_post_id = posts[-1]["postid"]
@@ -283,7 +247,23 @@ EOM
           puts e.message
         end
         next if raw.blank?
-        next unless topic = topic_lookup_from_imported_post_id("thread-#{post["parentid"]}")
+
+        # this works as long as comments can not have a comment as parent
+        # it's always Q-A Q-C or A-C
+
+        if post["type"] == "A" # for answers the question/topic is always the parent
+          topic = topic_lookup_from_imported_post_id("thread-#{post["parentid"]}")
+          next if topic.nil?
+        else
+          if post["parenttype"] == "Q" # for comments to questions, the question/topic is the parent as well
+            topic = topic_lookup_from_imported_post_id("thread-#{post["parentid"]}")
+            next if topic.nil?
+          else # for comments to answers, the question/topic is the parent of the parent
+            topic = topic_lookup_from_imported_post_id("thread-#{post["qid"]}")
+            next if topic.nil?
+          end
+        end
+        next if topic.nil?
 
         p = {
           id: post["postid"],
@@ -300,16 +280,32 @@ EOM
     end
   end
 
+  def import_bestanswer
+    puts "", "importing best answers..."
+    ans = mysql_query("select postid, selchildid from qa_posts where selchildid is not null").to_a
+    ans.each do |answer|
+      begin
+        post = Post.find_by(id: post_id_from_imported_post_id("#{answer["selchildid"]}"))
+        post.custom_fields["is_accepted_answer"] = "true"
+        post.save
+        topic = Topic.find(post.topic_id)
+        topic.custom_fields["accepted_answer_post_id"] = post.id
+        topic.save
+      rescue => e
+        puts "error acting on post #{e}"
+      end
+    end
+  end
+
   def import_likes
     puts "", "importing likes..."
-    likes = mysql_query(<<-SQL
+    likes = mysql_query(<<-SQL).to_a
         SELECT postid, userid
         FROM #{TABLE_PREFIX}uservotes u
         WHERE u.vote=1
                         SQL
-                       ).to_a
     likes.each do |like|
-      post = Post.find_by(id: post_id_from_imported_post_id("thread-#{like['postid']}"))
+      post = Post.find_by(id: post_id_from_imported_post_id("thread-#{like["postid"]}"))
       user = User.find_by(id: user_id_from_imported_user_id(like["userid"]))
       begin
         PostActionCreator.like(user, post) if user && post
@@ -343,6 +339,11 @@ EOM
   def preprocess_post_raw(raw)
     return "" if raw.blank?
 
+    raw.gsub!(%r{<a(?:.+)href="(\S+)"(?:.*)>(.+)</a>}i, '[\2](\1)')
+    raw.gsub!(%r{<p>(.+?)</p>}im) { "#{$1}\n\n" }
+    raw.gsub!("<br />", "\n")
+    raw.gsub!(%r{<strong>(.*?)</strong>}im, '[b]\1[/b]')
+
     # decode HTML entities
     raw = @htmlentities.decode(raw)
     raw = ActionView::Base.full_sanitizer.sanitize raw
@@ -351,26 +352,24 @@ EOM
     raw.gsub!(/(\\r)?\\n/, "\n")
     raw.gsub!("\\t", "\t")
 
-    raw.gsub!('<br />', "\n")
-
     # [HTML]...[/HTML]
     raw.gsub!(/\[html\]/i, "\n```html\n")
-    raw.gsub!(/\[\/html\]/i, "\n```\n")
+    raw.gsub!(%r{\[/html\]}i, "\n```\n")
 
     # [PHP]...[/PHP]
     raw.gsub!(/\[php\]/i, "\n```php\n")
-    raw.gsub!(/\[\/php\]/i, "\n```\n")
+    raw.gsub!(%r{\[/php\]}i, "\n```\n")
 
     # [HIGHLIGHT="..."]
     raw.gsub!(/\[highlight="?(\w+)"?\]/i) { "\n```#{$1.downcase}\n" }
 
     # [CODE]...[/CODE]
     # [HIGHLIGHT]...[/HIGHLIGHT]
-    raw.gsub!(/\[\/?code\]/i, "\n```\n")
-    raw.gsub!(/\[\/?highlight\]/i, "\n```\n")
+    raw.gsub!(%r{\[/?code\]}i, "\n```\n")
+    raw.gsub!(%r{\[/?highlight\]}i, "\n```\n")
 
     # [SAMP]...[/SAMP]
-    raw.gsub!(/\[\/?samp\]/i, "`")
+    raw.gsub!(%r{\[/?samp\]}i, "`")
 
     # replace all chevrons with HTML entities
     # NOTE: must be done
@@ -385,16 +384,16 @@ EOM
     raw.gsub!("\u2603", ">")
 
     # [URL=...]...[/URL]
-    raw.gsub!(/\[url="?([^"]+?)"?\](.*?)\[\/url\]/im) { "[#{$2.strip}](#{$1})" }
-    raw.gsub!(/\[url="?(.+?)"?\](.+)\[\/url\]/im) { "[#{$2.strip}](#{$1})" }
+    raw.gsub!(%r{\[url="?([^"]+?)"?\](.*?)\[/url\]}im) { "[#{$2.strip}](#{$1})" }
+    raw.gsub!(%r{\[url="?(.+?)"?\](.+)\[/url\]}im) { "[#{$2.strip}](#{$1})" }
 
     # [URL]...[/URL]
     # [MP3]...[/MP3]
-    raw.gsub!(/\[\/?url\]/i, "")
-    raw.gsub!(/\[\/?mp3\]/i, "")
+    raw.gsub!(%r{\[/?url\]}i, "")
+    raw.gsub!(%r{\[/?mp3\]}i, "")
 
     # [MENTION]<username>[/MENTION]
-    raw.gsub!(/\[mention\](.+?)\[\/mention\]/i) do
+    raw.gsub!(%r{\[mention\](.+?)\[/mention\]}i) do
       old_username = $1
       if @old_username_to_new_usernames.has_key?(old_username)
         old_username = @old_username_to_new_usernames[old_username]
@@ -403,31 +402,31 @@ EOM
     end
 
     # [FONT=blah] and [COLOR=blah]
-    raw.gsub!(/\[FONT=.*?\](.*?)\[\/FONT\]/im, '\1')
-    raw.gsub!(/\[COLOR=.*?\](.*?)\[\/COLOR\]/im, '\1')
-    raw.gsub!(/\[COLOR=#.*?\](.*?)\[\/COLOR\]/im, '\1')
+    raw.gsub!(%r{\[FONT=.*?\](.*?)\[/FONT\]}im, '\1')
+    raw.gsub!(%r{\[COLOR=.*?\](.*?)\[/COLOR\]}im, '\1')
+    raw.gsub!(%r{\[COLOR=#.*?\](.*?)\[/COLOR\]}im, '\1')
 
-    raw.gsub!(/\[SIZE=.*?\](.*?)\[\/SIZE\]/im, '\1')
-    raw.gsub!(/\[h=.*?\](.*?)\[\/h\]/im, '\1')
+    raw.gsub!(%r{\[SIZE=.*?\](.*?)\[/SIZE\]}im, '\1')
+    raw.gsub!(%r{\[h=.*?\](.*?)\[/h\]}im, '\1')
 
     # [CENTER]...[/CENTER]
-    raw.gsub!(/\[CENTER\](.*?)\[\/CENTER\]/im, '\1')
+    raw.gsub!(%r{\[CENTER\](.*?)\[/CENTER\]}im, '\1')
 
     # [INDENT]...[/INDENT]
-    raw.gsub!(/\[INDENT\](.*?)\[\/INDENT\]/im, '\1')
-    raw.gsub!(/\[TABLE\](.*?)\[\/TABLE\]/im, '\1')
-    raw.gsub!(/\[TR\](.*?)\[\/TR\]/im, '\1')
-    raw.gsub!(/\[TD\](.*?)\[\/TD\]/im, '\1')
-    raw.gsub!(/\[TD="?.*?"?\](.*?)\[\/TD\]/im, '\1')
+    raw.gsub!(%r{\[INDENT\](.*?)\[/INDENT\]}im, '\1')
+    raw.gsub!(%r{\[TABLE\](.*?)\[/TABLE\]}im, '\1')
+    raw.gsub!(%r{\[TR\](.*?)\[/TR\]}im, '\1')
+    raw.gsub!(%r{\[TD\](.*?)\[/TD\]}im, '\1')
+    raw.gsub!(%r{\[TD="?.*?"?\](.*?)\[/TD\]}im, '\1')
 
     # [QUOTE]...[/QUOTE]
-    raw.gsub!(/\[quote\](.+?)\[\/quote\]/im) { |quote|
-      quote.gsub!(/\[quote\](.+?)\[\/quote\]/im) { "\n#{$1}\n" }
+    raw.gsub!(%r{\[quote\](.+?)\[/quote\]}im) do |quote|
+      quote.gsub!(%r{\[quote\](.+?)\[/quote\]}im) { "\n#{$1}\n" }
       quote.gsub!(/\n(.+?)/) { "\n> #{$1}" }
-    }
+    end
 
     # [QUOTE=<username>]...[/QUOTE]
-    raw.gsub!(/\[quote=([^;\]]+)\](.+?)\[\/quote\]/im) do
+    raw.gsub!(%r{\[quote=([^;\]]+)\](.+?)\[/quote\]}im) do
       old_username, quote = $1, $2
       if @old_username_to_new_usernames.has_key?(old_username)
         old_username = @old_username_to_new_usernames[old_username]
@@ -436,31 +435,33 @@ EOM
     end
 
     # [YOUTUBE]<id>[/YOUTUBE]
-    raw.gsub!(/\[youtube\](.+?)\[\/youtube\]/i) { "\n//youtu.be/#{$1}\n" }
+    raw.gsub!(%r{\[youtube\](.+?)\[/youtube\]}i) { "\n//youtu.be/#{$1}\n" }
 
     # [VIDEO=youtube;<id>]...[/VIDEO]
-    raw.gsub!(/\[video=youtube;([^\]]+)\].*?\[\/video\]/i) { "\n//youtu.be/#{$1}\n" }
+    raw.gsub!(%r{\[video=youtube;([^\]]+)\].*?\[/video\]}i) { "\n//youtu.be/#{$1}\n" }
 
     # More Additions ....
 
     # [spoiler=Some hidden stuff]SPOILER HERE!![/spoiler]
-    raw.gsub!(/\[spoiler="?(.+?)"?\](.+?)\[\/spoiler\]/im) { "\n#{$1}\n[spoiler]#{$2}[/spoiler]\n" }
+    raw.gsub!(%r{\[spoiler="?(.+?)"?\](.+?)\[/spoiler\]}im) do
+      "\n#{$1}\n[spoiler]#{$2}[/spoiler]\n"
+    end
 
     # [IMG][IMG]http://i63.tinypic.com/akga3r.jpg[/IMG][/IMG]
-    raw.gsub!(/\[IMG\]\[IMG\](.+?)\[\/IMG\]\[\/IMG\]/i) { "[IMG]#{$1}[/IMG]" }
+    raw.gsub!(%r{\[IMG\]\[IMG\](.+?)\[/IMG\]\[/IMG\]}i) { "[IMG]#{$1}[/IMG]" }
 
     # convert list tags to ul and list=1 tags to ol
     # (basically, we're only missing list=a here...)
     # (https://meta.discourse.org/t/phpbb-3-importer-old/17397)
-    raw.gsub!(/\[list\](.*?)\[\/list\]/im, '[ul]\1[/ul]')
-    raw.gsub!(/\[list=1\](.*?)\[\/list\]/im, '[ol]\1[/ol]')
-    raw.gsub!(/\[list\](.*?)\[\/list:u\]/im, '[ul]\1[/ul]')
-    raw.gsub!(/\[list=1\](.*?)\[\/list:o\]/im, '[ol]\1[/ol]')
+    raw.gsub!(%r{\[list\](.*?)\[/list\]}im, '[ul]\1[/ul]')
+    raw.gsub!(%r{\[list=1\](.*?)\[/list\]}im, '[ol]\1[/ol]')
+    raw.gsub!(%r{\[list\](.*?)\[/list:u\]}im, '[ul]\1[/ul]')
+    raw.gsub!(%r{\[list=1\](.*?)\[/list:o\]}im, '[ol]\1[/ol]')
     # convert *-tags to li-tags so bbcode-to-md can do its magic on phpBB's lists:
-    raw.gsub!(/\[\*\]\n/, '')
-    raw.gsub!(/\[\*\](.*?)\[\/\*:m\]/, '[li]\1[/li]')
+    raw.gsub!(/\[\*\]\n/, "")
+    raw.gsub!(%r{\[\*\](.*?)\[/\*:m\]}, '[li]\1[/li]')
     raw.gsub!(/\[\*\](.*?)\n/, '[li]\1[/li]')
-    raw.gsub!(/\[\*=1\]/, '')
+    raw.gsub!(/\[\*=1\]/, "")
 
     raw.strip!
     raw
@@ -468,7 +469,7 @@ EOM
 
   def postprocess_post_raw(raw)
     # [QUOTE=<username>;<post_id>]...[/QUOTE]
-    raw.gsub!(/\[quote=([^;]+);(\d+)\](.+?)\[\/quote\]/im) do
+    raw.gsub!(%r{\[quote=([^;]+);(\d+)\](.+?)\[/quote\]}im) do
       old_username, post_id, quote = $1, $2, $3
 
       if @old_username_to_new_usernames.has_key?(old_username)
@@ -477,7 +478,7 @@ EOM
 
       if topic_lookup = topic_lookup_from_imported_post_id(post_id)
         post_number = topic_lookup[:post_number]
-        topic_id    = topic_lookup[:topic_id]
+        topic_id = topic_lookup[:topic_id]
         "\n[quote=\"#{old_username},post:#{post_number},topic:#{topic_id}\"]\n#{quote}\n[/quote]\n"
       else
         "\n[quote=\"#{old_username}\"]\n#{quote}\n[/quote]\n"
@@ -485,11 +486,11 @@ EOM
     end
 
     # remove attachments
-    raw.gsub!(/\[attach[^\]]*\]\d+\[\/attach\]/i, "")
+    raw.gsub!(%r{\[attach[^\]]*\]\d+\[/attach\]}i, "")
 
     # [THREAD]<thread_id>[/THREAD]
     # ==> http://my.discourse.org/t/slug/<topic_id>
-    raw.gsub!(/\[thread\](\d+)\[\/thread\]/i) do
+    raw.gsub!(%r{\[thread\](\d+)\[/thread\]}i) do
       thread_id = $1
       if topic_lookup = topic_lookup_from_imported_post_id("thread-#{thread_id}")
         topic_lookup[:url]
@@ -500,7 +501,7 @@ EOM
 
     # [THREAD=<thread_id>]...[/THREAD]
     # ==> [...](http://my.discourse.org/t/slug/<topic_id>)
-    raw.gsub!(/\[thread=(\d+)\](.+?)\[\/thread\]/i) do
+    raw.gsub!(%r{\[thread=(\d+)\](.+?)\[/thread\]}i) do
       thread_id, link = $1, $2
       if topic_lookup = topic_lookup_from_imported_post_id("thread-#{thread_id}")
         url = topic_lookup[:url]
@@ -512,7 +513,7 @@ EOM
 
     # [POST]<post_id>[/POST]
     # ==> http://my.discourse.org/t/slug/<topic_id>/<post_number>
-    raw.gsub!(/\[post\](\d+)\[\/post\]/i) do
+    raw.gsub!(%r{\[post\](\d+)\[/post\]}i) do
       post_id = $1
       if topic_lookup = topic_lookup_from_imported_post_id(post_id)
         topic_lookup[:url]
@@ -523,7 +524,7 @@ EOM
 
     # [POST=<post_id>]...[/POST]
     # ==> [...](http://my.discourse.org/t/<topic_slug>/<topic_id>/<post_number>)
-    raw.gsub!(/\[post=(\d+)\](.+?)\[\/post\]/i) do
+    raw.gsub!(%r{\[post=(\d+)\](.+?)\[/post\]}i) do
       post_id, link = $1, $2
       if topic_lookup = topic_lookup_from_imported_post_id(post_id)
         url = topic_lookup[:url]
@@ -537,14 +538,41 @@ EOM
   end
 
   def create_permalinks
-    puts '', 'Creating Permalink File...', ''
-    #creates permalinks for q2a category links
+    puts "", "Creating permalinks..."
+
+    # topics
+    Topic.find_each do |topic|
+      tcf = topic.custom_fields
+
+      if tcf && tcf["import_id"]
+        question_id = tcf["import_id"][/thread-(\d)/, 0]
+        url = "#{question_id}"
+        begin
+          Permalink.create(url: url, topic_id: topic.id)
+        rescue StandardError
+          nil
+        end
+      end
+    end
+
+    # categories
     Category.find_each do |category|
       ccf = category.custom_fields
 
       if ccf && ccf["import_id"]
-        url = category.parent_category ? "#{category.parent_category.slug}/#{category.slug}" : category.slug
-        Permalink.create(url: url, category_id: category.id) rescue nil
+        url =
+          (
+            if category.parent_category
+              "#{category.parent_category.slug}/#{category.slug}"
+            else
+              category.slug
+            end
+          )
+        begin
+          Permalink.create(url: url, category_id: category.id)
+        rescue StandardError
+          nil
+        end
       end
     end
   end
@@ -556,7 +584,6 @@ EOM
   def mysql_query(sql)
     @client.query(sql, cache_rows: true)
   end
-
 end
 
 ImportScripts::Question2Answer.new.perform

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 class SimilarTopicsController < ApplicationController
-
   class SimilarTopic
     def initialize(topic)
       @topic = topic
@@ -10,7 +9,7 @@ class SimilarTopicsController < ApplicationController
     attr_reader :topic
 
     def blurb
-      Search::GroupedSearchResults.blurb_for(@topic.try(:blurb))
+      Search::GroupedSearchResults.blurb_for(cooked: @topic.try(:blurb))
     end
   end
 
@@ -26,5 +25,4 @@ class SimilarTopicsController < ApplicationController
     topics.map! { |t| SimilarTopic.new(t) }
     render_serialized(topics, SimilarTopicSerializer, root: :similar_topics, rest_serializer: true)
   end
-
 end

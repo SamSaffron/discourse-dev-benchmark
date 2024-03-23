@@ -1,11 +1,7 @@
 # frozen_string_literal: true
 
-require 'rails_helper'
-
-describe Jobs::PeriodicalUpdates do
-
+RSpec.describe Jobs::PeriodicalUpdates do
   it "works" do
-
     # does not blow up, no mocks, everything is called
     Jobs::PeriodicalUpdates.new.execute(nil)
   end
@@ -33,6 +29,6 @@ describe Jobs::PeriodicalUpdates do
     # does not rebake
     Jobs::PeriodicalUpdates.new.execute
     post.reload
-    expect(post.baked_at).to eq(baked)
+    expect(post.baked_at).to eq_time(baked)
   end
 end

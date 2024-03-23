@@ -1,7 +1,14 @@
 # frozen_string_literal: true
 
 class UserCardSerializer < BasicUserSerializer
+  include UserStatusMixin
+
   attr_accessor :topic_post_count
+
+  def initialize(object, options = {})
+    super
+    options[:include_status] = true
+  end
 
   def self.staff_attributes(*attrs)
     attributes(*attrs)
@@ -16,7 +23,11 @@ class UserCardSerializer < BasicUserSerializer
     attributes(*attrs)
     attrs.each do |attr|
       define_method "include_#{attr}?" do
-        can_edit
+        if defined?(super)
+          super() && can_edit
+        else
+          can_edit
+        end
       end
     end
   end
@@ -34,6 +45,8 @@ class UserCardSerializer < BasicUserSerializer
   end
 
   attributes :email,
+             :secondary_emails,
+             :unconfirmed_emails,
              :last_posted_at,
              :last_seen_at,
              :created_at,
@@ -57,25 +70,34 @@ class UserCardSerializer < BasicUserSerializer
              :recent_time_read,
              :primary_group_id,
              :primary_group_name,
-             :primary_group_flair_url,
-             :primary_group_flair_bg_color,
-             :primary_group_flair_color,
-             :featured_topic
+             :flair_group_id,
+             :flair_name,
+             :flair_url,
+             :flair_bg_color,
+             :flair_color,
+             :featured_topic,
+             :timezone,
+             :pending_posts_count
 
-  untrusted_attributes :bio_excerpt,
-                       :website,
-                       :website_name,
-                       :location,
-                       :card_background_upload_url
+  untrusted_attributes :bio_excerpt, :website, :website_name, :location, :card_background_upload_url
 
   staff_attributes :staged
 
   has_many :featured_user_badges, embed: :ids, serializer: UserBadgeSerializer, root: :user_badges
 
-  def include_email?
-    (object.id && object.id == scope.user.try(:id)) ||
-      (scope.is_staff? && object.staged?)
+  delegate :user_stat, to: :object, private: true
+  delegate :pending_posts_count, to: :user_stat
+
+  def include_pending_posts_count?
+    scope.is_me?(object) || scope.is_staff?
   end
+
+  def include_email?
+    (object.id && object.id == scope.user.try(:id)) || (scope.is_staff? && object.staged?)
+  end
+
+  alias_method :include_secondary_emails?, :include_email?
+  alias_method :include_unconfirmed_emails?, :include_email?
 
   def bio_excerpt
     object.user_profile.bio_excerpt(350, keep_newlines: true, keep_emoji_images: true)
@@ -90,17 +112,14 @@ class UserCardSerializer < BasicUserSerializer
   end
 
   def website_name
-    uri = begin
-      URI(website.to_s)
-    rescue URI::Error
-    end
+    uri =
+      begin
+        URI(website.to_s)
+      rescue URI::Error
+      end
 
     return if uri.nil? || uri.host.nil?
-    uri.host.sub(/^www\./, '') + uri.path
-  end
-
-  def include_website_name
-    website.present?
+    uri.host.sub(/\Awww\./, "") + uri.path
   end
 
   def ignored
@@ -124,7 +143,7 @@ class UserCardSerializer < BasicUserSerializer
   # Needed because 'send_private_message_to_user' will always return false
   # when the current user is being serialized
   def can_send_private_messages
-    scope.can_send_private_message?(Discourse.system_user)
+    scope.can_send_private_messages?
   end
 
   def can_send_private_message_to_user
@@ -140,8 +159,8 @@ class UserCardSerializer < BasicUserSerializer
   end
 
   def user_fields
-    allowed_keys = scope.allowed_user_field_ids(object).map(&:to_s)
-    object.user_fields&.select { |k, v| allowed_keys.include?(k) }
+    allowed_keys = scope.allowed_user_field_ids(object)
+    object.user_fields(allowed_keys)
   end
 
   def include_user_fields?
@@ -149,14 +168,14 @@ class UserCardSerializer < BasicUserSerializer
   end
 
   def custom_fields
-    fields = User.whitelisted_user_custom_fields(scope)
-
-    if scope.can_edit?(object)
-      fields += DiscoursePluginRegistry.serialized_current_user_fields.to_a
-    end
+    fields = custom_field_keys
 
     if fields.present?
-      User.custom_fields_for_ids([object.id], fields)[object.id] || {}
+      if object.custom_fields_preloaded?
+        {}.tap { |h| fields.each { |f| h[f] = object.custom_fields[f] } }
+      else
+        User.custom_fields_for_ids([object.id], fields)[object.id] || {}
+      end
     else
       {}
     end
@@ -175,26 +194,45 @@ class UserCardSerializer < BasicUserSerializer
   end
 
   def primary_group_name
-    object.primary_group.try(:name)
+    object.primary_group&.name
   end
 
-  def primary_group_flair_url
-    object.try(:primary_group).try(:flair_url)
+  def flair_name
+    object.flair_group&.name
   end
 
-  def primary_group_flair_bg_color
-    object.try(:primary_group).try(:flair_bg_color)
+  def flair_url
+    object.flair_group&.flair_url
   end
 
-  def primary_group_flair_color
-    object.try(:primary_group).try(:flair_color)
+  def flair_bg_color
+    object.flair_group&.flair_bg_color
+  end
+
+  def flair_color
+    object.flair_group&.flair_color
   end
 
   def featured_topic
     object.user_profile.featured_topic
   end
 
+  def include_timezone?
+    SiteSetting.display_local_time_in_user_card?
+  end
+
+  def timezone
+    object.user_option.timezone
+  end
+
   def card_background_upload_url
     object.card_background_upload&.url
+  end
+
+  private
+
+  def custom_field_keys
+    # Can be extended by other serializers
+    User.allowed_user_custom_fields(scope)
   end
 end

@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require_dependency 'reviewable/collection'
+require "reviewable/collection"
 
 class Reviewable < ActiveRecord::Base
   class Actions < Reviewable::Collection
-    attr_reader :bundles
+    attr_reader :bundles, :reviewable
 
     def initialize(reviewable, guardian, args = nil)
       super(reviewable, guardian, args)
@@ -15,9 +15,9 @@ class Reviewable < ActiveRecord::Base
     # one off, add it manually.
     def self.common_actions
       {
-        approve: Action.new(:approve, 'thumbs-up', 'reviewables.actions.approve.title'),
-        reject: Action.new(:reject, 'thumbs-down', 'reviewables.actions.reject.title'),
-        delete: Action.new(:delete, 'trash-alt', 'reviewables.actions.delete_single.title')
+        approve: Action.new(:approve, "thumbs-up", "reviewables.actions.approve.title"),
+        reject: Action.new(:reject, "thumbs-down", "reviewables.actions.reject.title"),
+        delete: Action.new(:delete, "trash-alt", "reviewables.actions.delete_single.title"),
       }
     end
 
@@ -33,11 +33,22 @@ class Reviewable < ActiveRecord::Base
     end
 
     class Action < Item
-      attr_accessor :icon, :button_class, :label, :description, :confirm_message, :client_action
+      attr_accessor :icon,
+                    :button_class,
+                    :label,
+                    :description,
+                    :confirm_message,
+                    :client_action,
+                    :require_reject_reason,
+                    :custom_modal
 
       def initialize(id, icon = nil, button_class = nil, label = nil)
         super(id)
         @icon, @button_class, @label = icon, button_class, label
+      end
+
+      def server_action
+        id.split("-").last
       end
     end
 
@@ -48,6 +59,7 @@ class Reviewable < ActiveRecord::Base
     end
 
     def add(id, bundle: nil)
+      id = [reviewable.target_type&.underscore, id].compact_blank.join("-")
       action = Actions.common_actions[id] || Action.new(id)
       yield action if block_given?
       @content << action
@@ -55,6 +67,5 @@ class Reviewable < ActiveRecord::Base
       bundle ||= add_bundle(id)
       bundle.actions << action
     end
-
   end
 end

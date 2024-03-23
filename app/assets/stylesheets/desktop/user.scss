@@ -1,43 +1,40 @@
 // Desktop styles for "/user" section
-.user-content-wrapper {
-  &,
-  > .user-stream {
-    > .alert:first-child {
-      margin-top: 10px;
-    }
-  }
-
-  .show-mores {
-    position: absolute;
-  }
-}
-
-.form-horizontal .control-group.category {
-  margin-top: 18px;
-}
 
 .user-profile-hidden {
   font-size: 1.5em;
   text-align: center;
 }
+
 .user-secondary-navigation {
   min-width: 150px;
+
+  .combo-box {
+    width: 100%;
+    &:not(:last-of-type) {
+      margin-bottom: 0.875em;
+    }
+  }
+
   .nav-stacked {
     background-color: transparent;
+    margin: 0;
 
     li {
       border-bottom: none;
-
+      &:hover,
+      &.active {
+        background: var(--primary-very-low);
+      }
       &.archive {
         padding-left: 1.4em;
       }
     }
 
     a {
-      color: $primary-medium;
+      color: var(--primary-medium);
 
       &.active {
-        color: $primary;
+        color: var(--primary);
         font-weight: bold;
         background-color: transparent;
 
@@ -47,25 +44,38 @@
       }
     }
   }
+
+  .select-kit + .messages-nav {
+    margin-top: 1em;
+  }
+
+  .inboxes-controls {
+    margin-bottom: 0.75em;
+  }
+
+  &.user-messages {
+    --left-padding: 0.8em;
+
+    .nav-stacked {
+      a {
+        padding-left: calc(
+          var(--left-padding) - 1px
+        ); // 1px accounts for border on select-kit elements above
+      }
+    }
+  }
 }
 
 .user-content {
-  padding-bottom: s(3);
-  margin-bottom: s(3);
-  background-color: $secondary;
+  padding: 0;
+  margin-top: 2em;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  background: var(--d-content-background, var(--secondary));
   box-sizing: border-box;
-
-  &.user-badges-list {
-    display: flex;
-    flex-wrap: wrap;
-  }
 
   .btn.right {
     float: right;
-  }
-
-  h2 {
-    margin-bottom: 10px;
   }
 }
 
@@ -76,23 +86,28 @@
   }
 }
 
-.pref-second-factor {
-  margin-top: 10px;
+.invite-controls .btn {
+  margin-right: 0px;
 }
 
-.user-invite-list {
+table.user-invite-list {
   width: 100%;
   margin-top: 15px;
+
   tr {
     td {
       padding: 0.667em;
+
+      &.invite-actions {
+        white-space: nowrap;
+        width: 100px;
+      }
+
+      .label {
+        display: none;
+      }
     }
   }
-}
-
-.user-invite-search {
-  clear: both;
-  margin: 15px 0px -15px 0px;
 }
 
 .user-invite-none {
@@ -107,7 +122,7 @@
       .details {
         padding: 15px 0;
         margin: 0;
-        color: dark-light-choose(lighten($primary, 10%), $secondary);
+        color: var(--secondary);
       }
     }
 
@@ -116,37 +131,12 @@
         margin: 0 20px 10px 0;
       }
 
-      .primary {
-        .primary-textual {
-          padding: s(0 1 1);
-          a[href] {
-            text-decoration: underline;
-          }
-          h1 {
-            max-width: 100%;
-            @include ellipsis;
-          }
-          .location-and-website {
-            display: flex;
-            max-width: 100%;
-            @include ellipsis;
-            .user-profile-location {
-              margin-right: 1em;
-            }
-          }
-        }
-
-        .bio {
-          max-width: 750px;
-
-          a.mention {
-            text-decoration: none;
-          }
-        }
+      .primary-textual {
+        padding: 0 0 0.5em;
       }
 
-      .secondary {
-        margin-top: s(4);
+      .bio {
+        max-width: 750px;
       }
     }
 
@@ -163,12 +153,16 @@
     }
 
     .controls {
-      padding: 0 0 12px 0;
-      float: right;
-      text-align: right;
+      max-width: 13.5em;
 
+      li {
+        margin-bottom: 0.5em;
+      }
+
+      li > .select-kit-header, // select-kit
       .btn {
-        min-width: 140px;
+        min-width: 9.5em;
+        width: 100%;
       }
     }
 
@@ -178,19 +172,16 @@
       }
       .controls {
         width: auto;
+        max-width: unset;
 
         > ul {
           display: inline-flex;
           > li {
-            display: inline;
-            margin-left: s(3);
-            .d-button-label {
-              line-height: 1;
-            }
+            display: inline-flex;
+            margin-left: 0.75em;
           }
 
           a {
-            margin-bottom: 10px;
             width: auto;
           }
         }
@@ -200,7 +191,7 @@
         position: relative;
         padding: 0;
         margin-top: 0;
-        border-bottom: 1px solid $primary-low;
+        border-bottom: 1px solid var(--primary-low);
       }
     }
   }
@@ -222,37 +213,12 @@
   }
 }
 
-.user-preferences {
-  padding-top: 10px;
-  padding-left: 30px;
-
-  .form-vertical {
-    width: 500px;
-    max-width: 100%;
+.user-messages-page {
+  .topic-list th {
+    padding-top: 0;
   }
 
-  h3 {
-    color: $primary;
-    margin: 20px 0 10px 0;
-  }
-
-  .category-selector,
-  .tag-chooser,
-  textarea,
-  input.user-selector,
-  .user-chooser {
-    width: 100%;
-  }
-
-  .instructions {
-    display: inline-block;
-    margin-top: s(1);
-  }
-}
-
-.user-crawler {
-  .username {
-    margin-left: 5px;
-    display: inline-block;
+  .show-mores {
+    position: absolute;
   }
 }

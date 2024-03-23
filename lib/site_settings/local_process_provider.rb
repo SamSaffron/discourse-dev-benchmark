@@ -1,11 +1,9 @@
 # frozen_string_literal: true
 
-module SiteSettings; end
+module SiteSettings
+end
 
 class SiteSettings::LocalProcessProvider
-
-  attr_accessor :current_site
-
   class Setting
     attr_accessor :name, :data_type, :value
 
@@ -29,7 +27,6 @@ class SiteSettings::LocalProcessProvider
 
   def initialize
     @settings = {}
-    self.current_site = "test"
   end
 
   def all
@@ -49,7 +46,6 @@ class SiteSettings::LocalProcessProvider
       settings[name] = setting
     end
     setting.value = value.to_s
-    DiscourseEvent.trigger(:site_setting_saved, setting)
     setting
   end
 
@@ -61,4 +57,7 @@ class SiteSettings::LocalProcessProvider
     @settings[current_site] = {}
   end
 
+  def current_site
+    RailsMultisite::ConnectionManagement.current_db
+  end
 end

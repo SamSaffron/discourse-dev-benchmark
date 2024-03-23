@@ -1,56 +1,113 @@
 # frozen_string_literal: true
 
 class CurrentUserSerializer < BasicUserSerializer
+  include UserTagNotificationsMixin
+  include UserSidebarMixin
+  include UserStatusMixin
 
   attributes :name,
              :unread_notifications,
-             :unread_private_messages,
+             :unread_high_priority_notifications,
+             :all_unread_notifications_count,
              :read_first_notification?,
              :admin?,
              :notification_channel_position,
              :moderator?,
              :staff?,
+             :whisperer?,
              :title,
-             :reply_count,
-             :topic_count,
-             :enable_quoting,
-             :enable_defer,
-             :external_links_in_new_tab,
-             :dynamic_favicon,
+             :any_posts,
              :trust_level,
              :can_send_private_email_messages,
+             :can_send_private_messages,
+             :can_upload_avatar,
              :can_edit,
              :can_invite_to_forum,
              :no_password,
              :can_delete_account,
-             :should_be_redirected_to_top,
-             :redirected_to_top,
+             :can_post_anonymously,
+             :can_ignore_users,
+             :can_delete_all_posts_and_topics,
+             :can_summarize,
              :custom_fields,
              :muted_category_ids,
-             :muted_tag_ids,
+             :indirectly_muted_category_ids,
+             :regular_category_ids,
+             :tracked_category_ids,
+             :watched_first_post_category_ids,
+             :watched_category_ids,
+             :watched_tags,
+             :watching_first_post_tags,
+             :tracked_tags,
+             :muted_tags,
+             :regular_tags,
              :dismissed_banner_key,
              :is_anonymous,
              :reviewable_count,
-             :read_faq,
-             :automatically_unpin_topics,
-             :mailing_list_mode,
+             :unseen_reviewable_count,
+             :new_personal_messages_notifications_count,
+             :read_faq?,
              :previous_visit_at,
              :seen_notification_id,
              :primary_group_id,
+             :flair_group_id,
              :can_create_topic,
+             :can_create_group,
              :link_posting_access,
              :external_id,
+             :associated_account_ids,
              :top_category_ids,
-             :hide_profile_and_presence,
              :groups,
              :second_factor_enabled,
              :ignored_users,
-             :title_count_mode,
-             :timezone,
-             :featured_topic
+             :featured_topic,
+             :do_not_disturb_until,
+             :has_topic_draft,
+             :can_review,
+             :draft_count,
+             :pending_posts_count,
+             :grouped_unread_notifications,
+             :display_sidebar_tags,
+             :sidebar_tags,
+             :sidebar_category_ids,
+             :sidebar_sections,
+             :new_new_view_enabled?,
+             :use_experimental_topic_bulk_actions?,
+             :use_experimental_topic_bulk_actions?,
+             :use_admin_sidebar,
+             :glimmer_header_enabled?,
+             :can_view_raw_email
+
+  delegate :user_stat, to: :object, private: true
+  delegate :any_posts, :draft_count, :pending_posts_count, :read_faq?, to: :user_stat
+
+  has_one :user_option, embed: :object, serializer: CurrentUserOptionSerializer
+
+  def initialize(object, options = {})
+    super
+    options[:include_status] = true
+  end
+
+  def sidebar_sections
+    SidebarSection
+      .public_sections
+      .or(SidebarSection.where(user_id: object.id))
+      .includes(:sidebar_urls)
+      .order("(section_type IS NOT NULL) DESC, (public IS TRUE) DESC")
+      .map { |section| SidebarSectionSerializer.new(section, root: false) }
+  end
 
   def groups
-    object.visible_groups.pluck(:id, :name).map { |id, name| { id: id, name: name.downcase } }
+    owned_group_ids = GroupUser.where(user_id: id, owner: true).pluck(:group_id).to_set
+
+    object
+      .visible_groups
+      .pluck(:id, :name, :has_messages)
+      .map do |id, name, has_messages|
+        group = { id: id, name: name, has_messages: has_messages }
+        group[:owner] = true if owned_group_ids.include?(id)
+        group
+      end
   end
 
   def link_posting_access
@@ -61,60 +118,49 @@ class CurrentUserSerializer < BasicUserSerializer
     scope.can_create_topic?(nil)
   end
 
-  def read_faq
-    object.user_stat.read_faq?
+  def can_create_group
+    scope.can_create_group?
   end
 
-  def topic_count
-    object.user_stat.topic_count
-  end
-
-  def reply_count
-    object.user_stat.topic_reply_count
-  end
-
-  def hide_profile_and_presence
-    object.user_option.hide_profile_and_presence
-  end
-
-  def enable_quoting
-    object.user_option.enable_quoting
-  end
-
-  def enable_defer
-    object.user_option.enable_defer
-  end
-
-  def external_links_in_new_tab
-    object.user_option.external_links_in_new_tab
-  end
-
-  def dynamic_favicon
-    object.user_option.dynamic_favicon
-  end
-
-  def title_count_mode
-    object.user_option.title_count_mode
-  end
-
-  def automatically_unpin_topics
-    object.user_option.automatically_unpin_topics
-  end
-
-  def should_be_redirected_to_top
-    object.user_option.should_be_redirected_to_top
-  end
-
-  def redirected_to_top
-    object.user_option.redirected_to_top
-  end
-
-  def timezone
-    object.user_option.timezone
+  def include_can_create_group?
+    scope.can_create_group?
   end
 
   def can_send_private_email_messages
     scope.can_send_private_messages_to_email?
+  end
+
+  def can_send_private_messages
+    scope.can_send_private_messages?
+  end
+
+  def use_admin_sidebar
+    object.admin? && object.in_any_groups?(SiteSetting.admin_sidebar_enabled_groups_map)
+  end
+
+  def include_user_admin_sidebar?
+    object.admin?
+  end
+
+  def can_post_anonymously
+    SiteSetting.allow_anonymous_posting &&
+      (is_anonymous || object.in_any_groups?(SiteSetting.anonymous_posting_allowed_groups_map))
+  end
+
+  def can_ignore_users
+    !is_anonymous && object.in_any_groups?(SiteSetting.ignore_allowed_groups_map)
+  end
+
+  def can_delete_all_posts_and_topics
+    object.in_any_groups?(SiteSetting.delete_all_posts_and_topics_allowed_groups_map)
+  end
+
+  def can_summarize
+    object.in_any_groups?(SiteSetting.custom_summarization_allowed_groups_map)
+  end
+
+  def can_upload_avatar
+    !is_anonymous && object.in_any_groups?(SiteSetting.uploaded_avatars_allowed_groups_map)
   end
 
   def can_edit
@@ -122,7 +168,7 @@ class CurrentUserSerializer < BasicUserSerializer
   end
 
   def can_invite_to_forum
-    true
+    scope.can_invite_to_forum?
   end
 
   def include_can_invite_to_forum?
@@ -145,14 +191,10 @@ class CurrentUserSerializer < BasicUserSerializer
     true
   end
 
-  def include_redirected_to_top?
-    object.user_option.redirected_to_top.present?
-  end
-
   def custom_fields
     fields = nil
     if SiteSetting.public_user_custom_fields.present?
-      fields = SiteSetting.public_user_custom_fields.split('|')
+      fields = SiteSetting.public_user_custom_fields.split("|")
     end
     DiscoursePluginRegistry.serialized_current_user_fields.each do |f|
       fields ||= []
@@ -167,11 +209,27 @@ class CurrentUserSerializer < BasicUserSerializer
   end
 
   def muted_category_ids
-    CategoryUser.lookup(object, :muted).pluck(:category_id)
+    categories_with_notification_level(:muted)
   end
 
-  def muted_tag_ids
-    TagUser.lookup(object, :muted).pluck(:tag_id)
+  def indirectly_muted_category_ids
+    CategoryUser.indirectly_muted_category_ids(object)
+  end
+
+  def regular_category_ids
+    categories_with_notification_level(:regular)
+  end
+
+  def tracked_category_ids
+    categories_with_notification_level(:tracking)
+  end
+
+  def watched_category_ids
+    categories_with_notification_level(:watching)
+  end
+
+  def watched_first_post_category_ids
+    categories_with_notification_level(:watching_first_post)
   end
 
   def ignored_users
@@ -179,15 +237,21 @@ class CurrentUserSerializer < BasicUserSerializer
   end
 
   def top_category_ids
-    omitted_notification_levels = [CategoryUser.notification_levels[:muted], CategoryUser.notification_levels[:regular]]
-    CategoryUser.where(user_id: object.id)
+    omitted_notification_levels = [
+      CategoryUser.notification_levels[:muted],
+      CategoryUser.notification_levels[:regular],
+    ]
+    CategoryUser
+      .where(user_id: object.id)
       .where.not(notification_level: omitted_notification_levels)
-      .order("
+      .order(
+        "
         CASE
           WHEN notification_level = 3 THEN 1
           WHEN notification_level = 2 THEN 2
           WHEN notification_level = 4 THEN 3
-        END")
+        END",
+      )
       .pluck(:category_id)
       .slice(0, SiteSetting.header_dropdown_category_count)
   end
@@ -200,12 +264,8 @@ class CurrentUserSerializer < BasicUserSerializer
     object.anonymous?
   end
 
-  def reviewable_count
-    Reviewable.list_for(object).count
-  end
-
-  def mailing_list_mode
-    object.user_option.mailing_list_mode
+  def can_review
+    scope.can_see_review_queue?
   end
 
   def include_primary_group_id?
@@ -217,7 +277,21 @@ class CurrentUserSerializer < BasicUserSerializer
   end
 
   def include_external_id?
-    SiteSetting.enable_sso
+    SiteSetting.enable_discourse_connect
+  end
+
+  def associated_account_ids
+    values = {}
+
+    object.user_associated_accounts.map do |user_associated_account|
+      values[user_associated_account.provider_name] = user_associated_account.provider_uid
+    end
+
+    values
+  end
+
+  def include_associated_account_ids?
+    SiteSetting.include_associated_account_ids
   end
 
   def second_factor_enabled
@@ -226,5 +300,25 @@ class CurrentUserSerializer < BasicUserSerializer
 
   def featured_topic
     object.user_profile.featured_topic
+  end
+
+  def has_topic_draft
+    true
+  end
+
+  def include_has_topic_draft?
+    Draft.has_topic_draft(object)
+  end
+
+  def unseen_reviewable_count
+    Reviewable.unseen_reviewable_count(object)
+  end
+
+  def use_experimental_topic_bulk_actions?
+    scope.user.in_any_groups?(SiteSetting.experimental_topic_bulk_actions_enabled_groups_map)
+  end
+
+  def can_view_raw_email
+    scope.user.in_any_groups?(SiteSetting.view_raw_email_allowed_groups_map)
   end
 end

@@ -22,7 +22,7 @@
 
 .hide,
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 .invisible {
@@ -38,13 +38,6 @@
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
-}
-
-// Affix
-// --------------------------------------------------
-
-.affix {
-  position: fixed;
 }
 
 // Contain floats
@@ -75,11 +68,4 @@
 
 .clickable {
   cursor: pointer;
-}
-
-// Buttons
-// ---------------------------------------------------
-.disable-no-hover:hover {
-  background: dark-light-choose($primary-low, $secondary-medium);
-  color: $primary;
 }

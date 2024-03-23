@@ -1,17 +1,15 @@
 # frozen_string_literal: true
 
-require 'rails_helper'
-
-describe UserUpdater do
+RSpec.describe UserUpdater do
+  fab!(:user)
+  fab!(:u1) { Fabricate(:user) }
+  fab!(:u2) { Fabricate(:user) }
+  fab!(:u3) { Fabricate(:user) }
 
   let(:acting_user) { Fabricate.build(:user) }
 
-  describe '#update_muted_users' do
-    it 'has no cross talk' do
-      u1 = Fabricate(:user)
-      u2 = Fabricate(:user)
-      u3 = Fabricate(:user)
-
+  describe "#update_muted_users" do
+    it "has no cross talk" do
       updater = UserUpdater.new(u1, u1)
       updater.update_muted_users("#{u2.username},#{u3.username}")
 
@@ -26,9 +24,7 @@ describe UserUpdater do
       expect(MutedUser.where(user_id: u3.id).count).to eq(0)
     end
 
-    it 'excludes acting user' do
-      u1 = Fabricate(:user)
-      u2 = Fabricate(:user)
+    it "excludes acting user" do
       updater = UserUpdater.new(u1, u1)
       updater.update_muted_users("#{u1.username},#{u2.username}")
 
@@ -36,101 +32,135 @@ describe UserUpdater do
     end
   end
 
-  describe '#update_ignored_users' do
-    it 'updates ignored users' do
-      u1 = Fabricate(:user, trust_level: 2)
-      u2 = Fabricate(:user, trust_level: 2)
-      u3 = Fabricate(:user, trust_level: 2)
-
-      updater = UserUpdater.new(u1, u1)
-      updater.update_ignored_users("#{u2.username},#{u3.username}")
-
-      updater = UserUpdater.new(u2, u2)
-      updater.update_ignored_users("#{u3.username},#{u1.username}")
-
-      updater = UserUpdater.new(u3, u3)
-      updater.update_ignored_users("")
-
-      expect(IgnoredUser.where(user_id: u2.id).pluck(:ignored_user_id)).to match_array([u3.id, u1.id])
-      expect(IgnoredUser.where(user_id: u1.id).pluck(:ignored_user_id)).to match_array([u2.id, u3.id])
-      expect(IgnoredUser.where(user_id: u3.id).count).to eq(0)
-    end
-
-    it 'excludes acting user' do
-      u1 = Fabricate(:user, trust_level: 2)
-      u2 = Fabricate(:user)
-      updater = UserUpdater.new(u1, u1)
-      updater.update_ignored_users("#{u1.username},#{u2.username}")
-
-      expect(IgnoredUser.where(user_id: u1.id).pluck(:ignored_user_id)).to match_array([u2.id])
-    end
-
-    context 'when acting user\'s trust level is below tl2' do
-      it 'excludes acting user' do
-        u1 = Fabricate(:user, trust_level: 1)
-        u2 = Fabricate(:user)
-        updater = UserUpdater.new(u1, u1)
-        updater.update_ignored_users("#{u2.username}")
-
-        expect(IgnoredUser.where(ignored_user_id: u2.id).count).to eq(0)
-      end
-    end
-
-    context 'when acting user is admin' do
-      it 'excludes acting user' do
-        u1 = Fabricate(:admin)
-        u2 = Fabricate(:user)
-        updater = UserUpdater.new(u1, u1)
-        updater.update_ignored_users("#{u1.username},#{u2.username}")
-
-        expect(IgnoredUser.where(user_id: u1.id).pluck(:ignored_user_id)).to match_array([u2.id])
-      end
-    end
-  end
-
-  describe '#update' do
-    fab!(:category) { Fabricate(:category) }
-    fab!(:tag) { Fabricate(:tag) }
+  describe "#update" do
+    fab!(:category)
+    fab!(:tag)
     fab!(:tag2) { Fabricate(:tag) }
 
-    it 'saves user' do
-      user = Fabricate(:user, name: 'Billy Bob')
-      updater = UserUpdater.new(acting_user, user)
+    it "saves user" do
+      user = Fabricate(:user, name: "Billy Bob")
+      updater = UserUpdater.new(user, user)
 
-      updater.update(name: 'Jim Tom')
+      updater.update(name: "Jim Tom")
 
-      expect(user.reload.name).to eq 'Jim Tom'
+      expect(user.reload.name).to eq "Jim Tom"
     end
 
-    it 'can update categories and tags' do
-      user = Fabricate(:user)
-      updater = UserUpdater.new(acting_user, user)
+    describe "the within_user_updater_transaction event" do
+      it "allows plugins to perform additional updates" do
+        update_attributes = { name: "Jimmmy Johnny" }
+        handler =
+          Proc.new do |user, attrs|
+            user.user_profile.update!(bio_raw: "hello world I'm Jimmmy")
+            expect(attrs).to eq(update_attributes)
+          end
+        DiscourseEvent.on(:within_user_updater_transaction, &handler)
+
+        updater = UserUpdater.new(user, user)
+        updater.update(update_attributes)
+
+        expect(user.reload.name).to eq("Jimmmy Johnny")
+        expect(user.user_profile.bio_raw).to eq("hello world I'm Jimmmy")
+      ensure
+        DiscourseEvent.off(:within_user_updater_transaction, &handler)
+      end
+
+      it "can cancel the whole update transaction if a handler raises" do
+        error_class = Class.new(StandardError)
+        handler = Proc.new { raise error_class.new }
+
+        DiscourseEvent.on(:within_user_updater_transaction, &handler)
+
+        old_name = user.name
+        updater = UserUpdater.new(user, user)
+
+        expect { updater.update(name: "Failure McClario") }.to raise_error(error_class)
+
+        expect(user.reload.name).to eq(old_name)
+      ensure
+        DiscourseEvent.off(:within_user_updater_transaction, &handler)
+      end
+    end
+
+    it "can update categories and tags" do
+      updater = UserUpdater.new(user, user)
       updater.update(watched_tags: "#{tag.name},#{tag2.name}", muted_category_ids: [category.id])
 
-      expect(TagUser.where(
-        user_id: user.id,
-        tag_id: tag.id,
-        notification_level: TagUser.notification_levels[:watching]
-      ).exists?).to eq(true)
+      expect(
+        TagUser.where(
+          user_id: user.id,
+          tag_id: tag.id,
+          notification_level: TagUser.notification_levels[:watching],
+        ).exists?,
+      ).to eq(true)
 
-      expect(TagUser.where(
-        user_id: user.id,
-        tag_id: tag2.id,
-        notification_level: TagUser.notification_levels[:watching]
-      ).exists?).to eq(true)
+      expect(
+        TagUser.where(
+          user_id: user.id,
+          tag_id: tag2.id,
+          notification_level: TagUser.notification_levels[:watching],
+        ).exists?,
+      ).to eq(true)
 
-      expect(CategoryUser.where(
-        user_id: user.id,
-        category_id: category.id,
-        notification_level: CategoryUser.notification_levels[:muted]
-      ).count).to eq(1)
+      expect(
+        CategoryUser.where(
+          user_id: user.id,
+          category_id: category.id,
+          notification_level: CategoryUser.notification_levels[:muted],
+        ).count,
+      ).to eq(1)
+    end
 
+    context "with a staged user" do
+      let(:staged_user) { Fabricate(:staged) }
+
+      context "when allow_changing_staged_user_tracking is false" do
+        before { SiteSetting.allow_changing_staged_user_tracking = false }
+
+        it "doesn't update muted categories and watched tags" do
+          updater = UserUpdater.new(Fabricate(:admin), staged_user)
+          updater.update(watched_tags: "#{tag.name}", muted_category_ids: [category.id])
+          expect(TagUser.exists?(user_id: staged_user.id)).to eq(false)
+          expect(CategoryUser.exists?(user_id: staged_user.id)).to eq(false)
+        end
+      end
+
+      context "when allow_changing_staged_user_tracking is true" do
+        before { SiteSetting.allow_changing_staged_user_tracking = true }
+
+        it "updates muted categories and watched tags" do
+          updater = UserUpdater.new(Fabricate(:admin), staged_user)
+          updater.update(watched_tags: "#{tag.name}", muted_category_ids: [category.id])
+          expect(
+            TagUser.exists?(
+              user_id: staged_user.id,
+              tag_id: tag.id,
+              notification_level: TagUser.notification_levels[:watching],
+            ),
+          ).to eq(true)
+
+          expect(
+            CategoryUser.exists?(
+              user_id: staged_user.id,
+              category_id: category.id,
+              notification_level: CategoryUser.notification_levels[:muted],
+            ),
+          ).to eq(true)
+        end
+      end
     end
 
     it "doesn't remove notification prefs when updating something else" do
-      user = Fabricate(:user)
-      TagUser.create!(user: user, tag: tag, notification_level: TagUser.notification_levels[:watching])
-      CategoryUser.create!(user: user, category: category, notification_level: CategoryUser.notification_levels[:muted])
+      TagUser.create!(
+        user: user,
+        tag: tag,
+        notification_level: TagUser.notification_levels[:watching],
+      )
+      CategoryUser.create!(
+        user: user,
+        category: category,
+        notification_level: CategoryUser.notification_levels[:muted],
+      )
 
       updater = UserUpdater.new(acting_user, user)
       updater.update(name: "Steve Dave")
@@ -139,38 +169,35 @@ describe UserUpdater do
       expect(CategoryUser.where(user: user).count).to eq(1)
     end
 
-    it 'updates various fields' do
-      user = Fabricate(:user)
+    it "updates various fields" do
       updater = UserUpdater.new(acting_user, user)
       date_of_birth = Time.zone.now
+      SiteSetting.disable_mailing_list_mode = false
 
       theme = Fabricate(:theme, user_selectable: true)
-      upload1 = Fabricate(:upload)
-      upload2 = Fabricate(:upload)
 
       seq = user.user_option.theme_key_seq
 
-      val = updater.update(
-        bio_raw: 'my new bio',
-        email_level: UserOption.email_level_types[:always],
-        mailing_list_mode: true,
-        digest_after_minutes: "45",
-        new_topic_duration_minutes: 100,
-        auto_track_topics_after_msecs: 101,
-        notification_level_when_replying: 3,
-        email_in_reply_to: false,
-        date_of_birth: date_of_birth,
-        theme_ids: [theme.id],
-        allow_private_messages: false,
-        card_background_upload_url: upload1.url,
-        profile_background_upload_url: upload2.url
-      )
+      val =
+        updater.update(
+          bio_raw: "my new bio",
+          email_level: UserOption.email_level_types[:always],
+          mailing_list_mode: true,
+          digest_after_minutes: "45",
+          new_topic_duration_minutes: 100,
+          auto_track_topics_after_msecs: 101,
+          notification_level_when_replying: 3,
+          email_in_reply_to: false,
+          date_of_birth: date_of_birth,
+          theme_ids: [theme.id],
+          allow_private_messages: false,
+        )
 
       expect(val).to be_truthy
 
       user.reload
 
-      expect(user.user_profile.bio_raw).to eq 'my new bio'
+      expect(user.user_profile.bio_raw).to eq "my new bio"
       expect(user.user_option.email_level).to eq UserOption.email_level_types[:always]
       expect(user.user_option.mailing_list_mode).to eq true
       expect(user.user_option.digest_after_minutes).to eq 45
@@ -182,24 +209,41 @@ describe UserUpdater do
       expect(user.user_option.theme_key_seq).to eq(seq + 1)
       expect(user.user_option.allow_private_messages).to eq(false)
       expect(user.date_of_birth).to eq(date_of_birth.to_date)
-      expect(user.card_background_upload).to eq(upload1)
-      expect(user.profile_background_upload).to eq(upload2)
+    end
 
-      success = updater.update(
-        profile_background_upload_url: "",
-        card_background_upload_url: ""
-      )
-
+    it "allows user to update profile header when the user has required group" do
+      user = Fabricate(:user, trust_level: TrustLevel[2])
+      updater = UserUpdater.new(user, user)
+      upload = Fabricate(:upload)
+      SiteSetting.profile_background_allowed_groups = Group::AUTO_GROUPS[:trust_level_2]
+      val = updater.update(profile_background_upload_url: upload.url)
+      expect(val).to be_truthy
       user.reload
-
+      expect(user.profile_background_upload).to eq(upload)
+      success = updater.update(profile_background_upload_url: "")
       expect(success).to eq(true)
-      expect(user.card_background_upload).to eq(nil)
+      user.reload
       expect(user.profile_background_upload).to eq(nil)
     end
 
+    it "allows user to update user card background when the user has required group" do
+      user = Fabricate(:user, trust_level: TrustLevel[2])
+      updater = UserUpdater.new(user, user)
+      upload = Fabricate(:upload)
+      SiteSetting.user_card_background_allowed_groups = Group::AUTO_GROUPS[:trust_level_2]
+      val = updater.update(card_background_upload_url: upload.url)
+      expect(val).to be_truthy
+      user.reload
+      expect(user.card_background_upload).to eq(upload)
+      success = updater.update(card_background_upload_url: "")
+      expect(success).to eq(true)
+      user.reload
+      expect(user.card_background_upload).to eq(nil)
+    end
+
     it "disables email_digests when enabling mailing_list_mode" do
-      user = Fabricate(:user)
       updater = UserUpdater.new(acting_user, user)
+      SiteSetting.disable_mailing_list_mode = false
 
       val = updater.update(mailing_list_mode: true, email_digests: true)
       expect(val).to be_truthy
@@ -210,8 +254,7 @@ describe UserUpdater do
       expect(user.user_option.mailing_list_mode).to eq true
     end
 
-    it "filters theme_ids blank values before updating perferences" do
-      user = Fabricate(:user)
+    it "filters theme_ids blank values before updating preferences" do
       user.user_option.update!(theme_ids: [1])
       updater = UserUpdater.new(acting_user, user)
 
@@ -233,27 +276,122 @@ describe UserUpdater do
       expect(user.user_option.theme_ids).to eq([theme.id, child.id])
     end
 
-    context 'when sso overrides bio' do
-      it 'does not change bio' do
-        SiteSetting.sso_url = "https://www.example.com/sso"
-        SiteSetting.enable_sso = true
-        SiteSetting.sso_overrides_bio = true
+    let(:schedule_attrs) do
+      {
+        enabled: true,
+        day_0_start_time: 30,
+        day_0_end_time: 60,
+        day_1_start_time: 30,
+        day_1_end_time: 60,
+        day_2_start_time: 30,
+        day_2_end_time: 60,
+        day_3_start_time: 30,
+        day_3_end_time: 60,
+        day_4_start_time: 30,
+        day_4_end_time: 60,
+        day_5_start_time: 30,
+        day_5_end_time: 60,
+        day_6_start_time: 30,
+        day_6_end_time: 60,
+      }
+    end
 
-        user = Fabricate(:user)
+    context "with user_notification_schedule" do
+      it "allows users to create their notification schedule when it doesn't exist previously" do
+        expect(user.user_notification_schedule).to be_nil
+        updater = UserUpdater.new(acting_user, user)
+
+        updater.update(user_notification_schedule: schedule_attrs)
+        user.reload
+        expect(user.user_notification_schedule.enabled).to eq(true)
+        expect(user.user_notification_schedule.day_0_start_time).to eq(30)
+        expect(user.user_notification_schedule.day_0_end_time).to eq(60)
+        expect(user.user_notification_schedule.day_6_start_time).to eq(30)
+        expect(user.user_notification_schedule.day_6_end_time).to eq(60)
+      end
+
+      it "allows users to update their notification schedule" do
+        UserNotificationSchedule.create({ user: user }.merge(UserNotificationSchedule::DEFAULT))
+        updater = UserUpdater.new(acting_user, user)
+        updater.update(user_notification_schedule: schedule_attrs)
+        user.reload
+        expect(user.user_notification_schedule.enabled).to eq(true)
+        expect(user.user_notification_schedule.day_0_start_time).to eq(30)
+        expect(user.user_notification_schedule.day_0_end_time).to eq(60)
+        expect(user.user_notification_schedule.day_6_start_time).to eq(30)
+        expect(user.user_notification_schedule.day_6_end_time).to eq(60)
+      end
+
+      it "processes the schedule and do_not_disturb_timings are created" do
+        updater = UserUpdater.new(acting_user, user)
+
+        expect { updater.update(user_notification_schedule: schedule_attrs) }.to change {
+          user.do_not_disturb_timings.count
+        }.by(4)
+      end
+
+      it "removes do_not_disturb_timings when the schedule is disabled" do
+        updater = UserUpdater.new(acting_user, user)
+        updater.update(user_notification_schedule: schedule_attrs)
+        expect(user.user_notification_schedule.enabled).to eq(true)
+
+        schedule_attrs[:enabled] = false
+        updater.update(user_notification_schedule: schedule_attrs)
+
+        expect(user.user_notification_schedule.enabled).to eq(false)
+        expect(user.do_not_disturb_timings.count).to eq(0)
+      end
+    end
+
+    context "when sso overrides bio" do
+      it "does not change bio" do
+        SiteSetting.discourse_connect_url = "https://www.example.com/sso"
+        SiteSetting.enable_discourse_connect = true
+        SiteSetting.discourse_connect_overrides_bio = true
+
         updater = UserUpdater.new(acting_user, user)
 
         expect(updater.update(bio_raw: "new bio")).to be_truthy
 
         user.reload
-        expect(user.user_profile.bio_raw).not_to eq 'new bio'
+        expect(user.user_profile.bio_raw).not_to eq "new bio"
       end
     end
 
-    context 'when updating primary group' do
-      let(:new_group) { Group.create(name: 'new_group') }
-      let(:user) { Fabricate(:user) }
+    context "when sso overrides location" do
+      it "does not change location" do
+        SiteSetting.discourse_connect_url = "https://www.example.com/sso"
+        SiteSetting.enable_discourse_connect = true
+        SiteSetting.discourse_connect_overrides_location = true
 
-      it 'updates when setting is enabled' do
+        updater = UserUpdater.new(acting_user, user)
+
+        expect(updater.update(location: "new location")).to be_truthy
+
+        user.reload
+        expect(user.user_profile.location).not_to eq "new location"
+      end
+    end
+
+    context "when sso overrides website" do
+      it "does not change website" do
+        SiteSetting.discourse_connect_url = "https://www.example.com/sso"
+        SiteSetting.enable_discourse_connect = true
+        SiteSetting.discourse_connect_overrides_website = true
+
+        updater = UserUpdater.new(acting_user, user)
+
+        expect(updater.update(website: "https://google.com")).to be_truthy
+
+        user.reload
+        expect(user.user_profile.website).not_to eq "https://google.com"
+      end
+    end
+
+    context "when updating primary group" do
+      let(:new_group) { Group.create(name: "new_group") }
+
+      it "updates when setting is enabled" do
         SiteSetting.user_selected_primary_groups = true
         user.groups << new_group
         user.update(primary_group_id: nil)
@@ -263,7 +401,7 @@ describe UserUpdater do
         expect(user.primary_group_id).to eq new_group.id
       end
 
-      it 'does not update when setting is disabled' do
+      it "does not update when setting is disabled" do
         SiteSetting.user_selected_primary_groups = false
         user.groups << new_group
         user.update(primary_group_id: nil)
@@ -273,40 +411,61 @@ describe UserUpdater do
         expect(user.primary_group_id).to eq nil
       end
 
-      it 'does not update when changing other profile data' do
+      it "does not update when changing other profile data" do
         SiteSetting.user_selected_primary_groups = true
         user.groups << new_group
         user.update(primary_group_id: new_group.id)
-        UserUpdater.new(acting_user, user).update(website: 'http://example.com')
+        UserUpdater.new(acting_user, user).update(website: "http://example.com")
 
         user.reload
         expect(user.primary_group_id).to eq new_group.id
       end
 
-      it 'can be removed by the user when setting is enabled' do
+      it "can be removed by the user when setting is enabled" do
         SiteSetting.user_selected_primary_groups = true
         user.groups << new_group
         user.update(primary_group_id: new_group.id)
-        UserUpdater.new(acting_user, user).update(primary_group_id: '')
+        UserUpdater.new(acting_user, user).update(primary_group_id: "")
 
         user.reload
         expect(user.primary_group_id).to eq nil
       end
 
-      it 'cannot be removed by the user when setting is disabled' do
+      it "cannot be removed by the user when setting is disabled" do
         SiteSetting.user_selected_primary_groups = false
         user.groups << new_group
         user.update(primary_group_id: new_group.id)
-        UserUpdater.new(acting_user, user).update(primary_group_id: '')
+        UserUpdater.new(acting_user, user).update(primary_group_id: "")
 
         user.reload
         expect(user.primary_group_id).to eq new_group.id
       end
     end
 
-    context 'when update fails' do
-      it 'returns false' do
-        user = Fabricate(:user)
+    context "when updating flair group" do
+      let(:group) do
+        Fabricate(
+          :group,
+          name: "Group",
+          flair_bg_color: "#111111",
+          flair_color: "#999999",
+          flair_icon: "icon",
+        )
+      end
+
+      it "updates when setting is enabled" do
+        group.add(user)
+
+        UserUpdater.new(acting_user, user).update(flair_group_id: group.id)
+        expect(user.reload.flair_group_id).to eq(group.id)
+
+        UserUpdater.new(acting_user, user).update(flair_group_id: "")
+        expect(user.reload.flair_group_id).to eq(nil)
+      end
+    end
+
+    context "when update fails" do
+      it "returns false" do
         user.stubs(save: false)
         updater = UserUpdater.new(acting_user, user)
 
@@ -314,159 +473,185 @@ describe UserUpdater do
       end
     end
 
-    context 'with permission to update title' do
-      it 'allows user to change title' do
-        user = Fabricate(:user, title: 'Emperor')
-        guardian = stub
-        guardian.stubs(:can_grant_title?).with(user, 'Minion').returns(true)
-        Guardian.stubs(:new).with(acting_user).returns(guardian)
+    context "with permission to update title" do
+      it "allows user to change title" do
+        user = Fabricate(:user, title: "Emperor")
+        Guardian.any_instance.stubs(:can_grant_title?).with(user, "Minion").returns(true)
         updater = UserUpdater.new(acting_user, user)
 
-        updater.update(title: 'Minion')
+        updater.update(title: "Minion")
 
-        expect(user.reload.title).to eq 'Minion'
+        expect(user.reload.title).to eq "Minion"
       end
     end
 
-    context 'title is from a badge' do
-      fab!(:user) { Fabricate(:user, title: 'Emperor') }
-      fab!(:badge) { Fabricate(:badge, name: 'Minion') }
+    context "when title is from a badge" do
+      fab!(:user) { Fabricate(:user, title: "Emperor") }
+      fab!(:badge) { Fabricate(:badge, name: "Minion") }
 
-      context 'badge can be used as a title' do
-        before do
-          badge.update(allow_title: true)
-        end
+      context "when badge can be used as a title" do
+        before { badge.update(allow_title: true) }
 
-        it 'can use as title, sets badge_granted_title' do
+        it "can use as title, sets granted_title_badge_id" do
           BadgeGranter.grant(badge, user)
           updater = UserUpdater.new(user, user)
           updater.update(title: badge.name)
           user.reload
-          expect(user.user_profile.badge_granted_title).to eq(true)
+          expect(user.user_profile.granted_title_badge_id).to eq(badge.id)
         end
 
-        it 'badge has not been granted, does not change title' do
+        it "badge has not been granted, does not change title" do
           badge.update(allow_title: true)
           updater = UserUpdater.new(user, user)
           updater.update(title: badge.name)
           user.reload
           expect(user.title).not_to eq(badge.name)
-          expect(user.user_profile.badge_granted_title).to eq(false)
+          expect(user.user_profile.granted_title_badge_id).to be_nil
         end
 
-        it 'changing to a title that is not from a badge, unsets badge_granted_title' do
+        it "changing to a title that is not from a badge, unsets granted_title_badge_id" do
           user.update(title: badge.name)
-          user.user_profile.update(badge_granted_title: true)
+          user.user_profile.update(granted_title_badge_id: badge.id)
 
-          guardian = stub
-          guardian.stubs(:can_grant_title?).with(user, 'Dancer').returns(true)
-          Guardian.stubs(:new).with(user).returns(guardian)
+          Guardian.any_instance.stubs(:can_grant_title?).with(user, "Dancer").returns(true)
 
           updater = UserUpdater.new(user, user)
-          updater.update(title: 'Dancer')
+          updater.update(title: "Dancer")
           user.reload
-          expect(user.title).to eq('Dancer')
-          expect(user.user_profile.badge_granted_title).to eq(false)
+          expect(user.title).to eq("Dancer")
+          expect(user.user_profile.granted_title_badge_id).to be_nil
         end
       end
 
-      it 'cannot use as title, does not change title' do
+      it "cannot use as title, does not change title" do
         BadgeGranter.grant(badge, user)
         updater = UserUpdater.new(user, user)
         updater.update(title: badge.name)
         user.reload
         expect(user.title).not_to eq(badge.name)
-        expect(user.user_profile.badge_granted_title).to eq(false)
+        expect(user.user_profile.granted_title_badge_id).to be_nil
       end
     end
 
-    context 'without permission to update title' do
-      it 'does not allow user to change title' do
-        user = Fabricate(:user, title: 'Emperor')
-        guardian = stub
-        guardian.stubs(:can_grant_title?).with(user, 'Minion').returns(false)
-        Guardian.stubs(:new).with(acting_user).returns(guardian)
+    context "without permission to update title" do
+      it "does not allow user to change title" do
+        user = Fabricate(:user, title: "Emperor")
+        Guardian.any_instance.stubs(:can_grant_title?).with(user, "Minion").returns(false)
         updater = UserUpdater.new(acting_user, user)
 
-        updater.update(title: 'Minion')
+        updater.update(title: "Minion")
 
-        expect(user.reload.title).not_to eq 'Minion'
+        expect(user.reload.title).not_to eq "Minion"
       end
     end
 
-    context 'when website includes http' do
-      it 'does not add http before updating' do
-        user = Fabricate(:user)
+    context "when website includes http" do
+      it "does not add http before updating" do
         updater = UserUpdater.new(acting_user, user)
 
-        updater.update(website: 'http://example.com')
+        updater.update(website: "http://example.com")
 
-        expect(user.reload.user_profile.website).to eq 'http://example.com'
+        expect(user.reload.user_profile.website).to eq "http://example.com"
       end
     end
 
-    context 'when website does not include http' do
-      it 'adds http before updating' do
-        user = Fabricate(:user)
+    context "when website does not include http" do
+      it "adds http before updating" do
         updater = UserUpdater.new(acting_user, user)
 
-        updater.update(website: 'example.com')
+        updater.update(website: "example.com")
 
-        expect(user.reload.user_profile.website).to eq 'http://example.com'
+        expect(user.reload.user_profile.website).to eq "http://example.com"
       end
     end
 
-    context 'when custom_fields is empty string' do
+    context "when website is invalid" do
+      it "returns an error" do
+        updater = UserUpdater.new(acting_user, user)
+
+        expect(updater.update(website: "ʔ<")).to eq nil
+      end
+    end
+
+    context "when custom_fields is empty string" do
       it "update is successful" do
-        user = Fabricate(:user)
-        user.custom_fields = { 'import_username' => 'my_old_username' }
+        user.custom_fields = { "import_username" => "my_old_username" }
         user.save
         updater = UserUpdater.new(acting_user, user)
 
-        updater.update(website: 'example.com', custom_fields: '')
-        expect(user.reload.custom_fields).to eq('import_username' => 'my_old_username')
+        updater.update(website: "example.com", custom_fields: "")
+        expect(user.reload.custom_fields).to eq("import_username" => "my_old_username")
+      end
+    end
+
+    context "when skip_new_user_tips is edited" do
+      it "updates seen_popups too" do
+        messages =
+          MessageBus.track_publish("/user-tips/#{user.id}") do
+            UserUpdater.new(Discourse.system_user, user).update(skip_new_user_tips: true)
+          end
+
+        expect(user.user_option.skip_new_user_tips).to eq(true)
+        expect(user.user_option.seen_popups).to eq([-1])
+        expect(messages.map(&:data)).to contain_exactly([-1])
+      end
+
+      it "does not reset seen_popups" do
+        user.user_option.update!(seen_popups: [1, 2, 3])
+
+        UserUpdater.new(Discourse.system_user, user).update(skip_new_user_tips: false)
+
+        expect(user.user_option.skip_new_user_tips).to eq(false)
+        expect(user.user_option.seen_popups).to eq([1, 2, 3])
+      end
+    end
+
+    context "when seen_popups is edited" do
+      it "publishes a message" do
+        messages =
+          MessageBus.track_publish("/user-tips/#{user.id}") do
+            UserUpdater.new(Discourse.system_user, user).update(seen_popups: [1])
+          end
+
+        expect(user.user_option.seen_popups).to eq([1])
+        expect(messages.map(&:data)).to contain_exactly([1])
       end
     end
 
     it "logs the action" do
+      user = Fabricate(:user, name: "Billy Bob")
+
+      expect do UserUpdater.new(user, user).update(name: "Jim Tom") end.to change {
+        UserHistory.count
+      }.by(1)
+
+      expect(UserHistory.last.action).to eq(UserHistory.actions[:change_name])
+
+      expect do UserUpdater.new(user, user).update(name: "JiM TOm") end.to_not change {
+        UserHistory.count
+      }
+
+      expect do UserUpdater.new(user, user).update(bio_raw: "foo bar") end.to_not change {
+        UserHistory.count
+      }
+
       user_without_name = Fabricate(:user, name: nil)
-      user = Fabricate(:user, name: 'Billy Bob')
 
       expect do
-        UserUpdater.new(acting_user, user).update(name: 'Jim Tom')
-      end.to change { UserHistory.count }.by(1)
-
-      expect(UserHistory.last.action).to eq(
-        UserHistory.actions[:change_name]
-      )
-
-      expect do
-        UserUpdater.new(acting_user, user).update(name: 'JiM TOm')
+        UserUpdater.new(user_without_name, user_without_name).update(bio_raw: "foo bar")
       end.to_not change { UserHistory.count }
 
       expect do
-        UserUpdater.new(acting_user, user).update(bio_raw: 'foo bar')
-      end.to_not change { UserHistory.count }
-
-      expect do
-        UserUpdater.new(acting_user, user_without_name).update(bio_raw: 'foo bar')
-      end.to_not change { UserHistory.count }
-
-      expect do
-        UserUpdater.new(acting_user, user_without_name).update(name: 'Jim Tom')
+        UserUpdater.new(user_without_name, user_without_name).update(name: "Jim Tom")
       end.to change { UserHistory.count }.by(1)
 
-      expect(UserHistory.last.action).to eq(
-        UserHistory.actions[:change_name]
+      expect(UserHistory.last.action).to eq(UserHistory.actions[:change_name])
+
+      expect do UserUpdater.new(user, user).update(name: "") end.to change { UserHistory.count }.by(
+        1,
       )
 
-      expect do
-        UserUpdater.new(acting_user, user).update(name: '')
-      end.to change { UserHistory.count }.by(1)
-
-      expect(UserHistory.last.action).to eq(
-        UserHistory.actions[:change_name]
-      )
+      expect(UserHistory.last.action).to eq(UserHistory.actions[:change_name])
     end
   end
 end

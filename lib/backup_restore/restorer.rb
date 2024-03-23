@@ -9,7 +9,7 @@ module BackupRestore
 
     attr_reader :success
 
-    def initialize(user_id:, filename:, factory:, disable_emails: true)
+    def initialize(user_id:, filename:, factory:, disable_emails: true, location: nil)
       @user_id = user_id
       @filename = filename
       @factory = factory
@@ -24,7 +24,7 @@ module BackupRestore
       @current_db = RailsMultisite::ConnectionManagement.current_db
 
       @system = factory.create_system_interface
-      @backup_file_handler = factory.create_backup_file_handler(@filename, @current_db)
+      @backup_file_handler = factory.create_backup_file_handler(@filename, @current_db, location)
       @database_restorer = factory.create_database_restorer(@current_db)
       @uploads_restorer = factory.create_uploads_restorer
     end
@@ -43,8 +43,10 @@ module BackupRestore
       validate_backup_metadata
 
       @system.enable_readonly_mode
-      @system.pause_sidekiq
+      @system.pause_sidekiq("restore")
       @system.wait_for_sidekiq
+      @system.flush_redis
+      @system.clear_sidekiq_queues
 
       @database_restorer.restore(db_dump_path)
 
@@ -52,15 +54,19 @@ module BackupRestore
 
       @system.disable_readonly_mode
 
-      clear_emoji_cache
-      clear_theme_cache
+      clear_category_cache
+      clear_stats
+      reload_translations
 
       @uploads_restorer.restore(@tmp_directory)
 
+      clear_emoji_cache
+      clear_theme_cache
+
       after_restore_hook
     rescue Compression::Strategy::ExtractFailed
-      log 'ERROR: The uncompressed file is too big. Consider increasing the hidden ' \
-          '"decompressed_backup_max_file_size_mb" setting.'
+      log "ERROR: The uncompressed file is too big. Consider increasing the hidden " \
+            '"decompressed_backup_max_file_size_mb" setting.'
       @database_restorer.rollback
     rescue SystemExit
       log "Restore process was cancelled!"
@@ -112,16 +118,29 @@ module BackupRestore
 
       DiscourseEvent.trigger(:site_settings_restored)
 
-      if @disable_emails && SiteSetting.disable_emails == 'no'
+      if @disable_emails && SiteSetting.disable_emails == "no"
         log "Disabling outgoing emails for non-staff users..."
         user = User.find_by_email(@user_info[:email]) || Discourse.system_user
-        SiteSetting.set_and_log(:disable_emails, 'non-staff', user)
+        SiteSetting.set_and_log(:disable_emails, "non-staff", user)
       end
+    end
+
+    def clear_category_cache
+      log "Clearing category cache..."
+      Category.reset_topic_ids_cache
+      Category.clear_subcategory_ids
     end
 
     def clear_emoji_cache
       log "Clearing emoji cache..."
       Emoji.clear_cache
+    rescue => ex
+      log "Something went wrong while clearing emoji cache.", ex
+    end
+
+    def reload_translations
+      log "Reloading translations..."
+      TranslationOverride.reload_all_overrides!
     end
 
     def notify_user
@@ -129,13 +148,11 @@ module BackupRestore
         log "Notifying '#{user.username}' of the end of the restore..."
         status = @success ? :restore_succeeded : :restore_failed
 
-        SystemMessage.create_from_system_user(
-          user, status,
-          logs: Discourse::Utils.pretty_logs(@logger.logs)
-        )
+        logs = Discourse::Utils.logs_markdown(@logger.logs, user: user)
+        post = SystemMessage.create_from_system_user(user, status, logs: logs)
       else
         log "Could not send notification to '#{@user_info[:username]}' " \
-          "(#{@user_info[:email]}), because the user does not exist."
+              "(#{@user_info[:email]}), because the user does not exist."
       end
     rescue => ex
       log "Something went wrong while notifying user.", ex
@@ -155,6 +172,12 @@ module BackupRestore
       ThemeField.force_recompilation!
       Theme.expire_site_cache!
       Stylesheet::Manager.cache.clear
+    rescue => ex
+      log "Something went wrong while clearing theme cache.", ex
+    end
+
+    def clear_stats
+      Discourse.stats.remove("missing_s3_uploads")
     end
 
     def after_restore_hook

@@ -1,22 +1,21 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-if !(ENV['RUBYOPT'] || "").include?("-W0")
-  ENV['RUBYOPT'] = "-W0"
+if !(ENV["RUBYOPT"] || "").include?("-W0")
+  ENV["RUBYOPT"] = "-W0"
   exec __FILE__
 end
 
-require 'socket'
-require 'fileutils'
-require 'etc'
-require 'securerandom'
-require 'optparse'
-require 'benchmark'
-require 'tempfile'
+require "socket"
+require "fileutils"
+require "etc"
+require "securerandom"
+require "optparse"
+require "benchmark"
+require "tempfile"
 
 # https://stackoverflow.com/questions/7749568/how-can-i-do-standard-deviation-in-ruby
 module Enumerable
-
   def sum
     self.inject(0) { |accum, i| accum + i }
   end
@@ -34,17 +33,16 @@ module Enumerable
   def standard_deviation
     Math.sqrt(self.sample_variance)
   end
-
 end
 
 class DevBench
-
-  PATH = File.expand_path('..', __FILE__)
+  PATH = File.expand_path("..", __FILE__)
   PG_PATH = "#{PATH}/data/pg"
   PG_CONF = "#{PG_PATH}/postgresql.conf"
   PG_SOCK_PATH = "#{PG_PATH}/sockets"
   DB_DUMP = "#{PATH}/data/db.dump"
   DB_TEST_DUMP = "#{PATH}/data/db_test.dump"
+  DB_TEST_MULTISITE_DUMP = "#{PATH}/data/db_test_multisite.dump"
   REDIS_PATH = "#{PATH}/data/redis"
   REDIS_CONF = "#{PATH}/data/redis/redis.conf"
   RANDOM_PATH = "#{PATH}/data/random_files.noindex"
@@ -54,7 +52,7 @@ class DevBench
   def pg_bin_path
     return @pg_bin_path if @pg_bin_path
 
-    ["13", "12", "11", "10"].each do |v|
+    %w[16 15 14 13 12 11 10].each do |v|
       bin_path = "/usr/lib/postgresql/#{v}/bin"
       if File.exist?("#{bin_path}/pg_ctl")
         @pg_bin_path = bin_path
@@ -63,9 +61,7 @@ class DevBench
     end
     if !@pg_bin_path
       bin_path = "/Applications/Postgres.app/Contents/Versions/latest/bin"
-      if File.exists?("#{bin_path}/pg_ctl")
-        @pg_bin_path = bin_path
-      end
+      @pg_bin_path = bin_path if File.exists?("#{bin_path}/pg_ctl")
     end
     if !@pg_bin_path
       puts "Can not find postgres bin path"
@@ -82,17 +78,15 @@ class DevBench
   end
 
   def find_free_port(range)
-    range.each do |port|
-      return port if port_available?(port)
-    end
+    range.each { |port| return port if port_available?(port) }
   end
 
   def pg_port
-    @pg_port ||= find_free_port(11000..11900)
+    @pg_port ||= find_free_port(11_000..11_900)
   end
 
   def redis_port
-    @redis_port ||= find_free_port(12000..12900)
+    @redis_port ||= find_free_port(12_000..12_900)
   end
 
   def redis_pid
@@ -107,9 +101,7 @@ class DevBench
     return @pg_ctl_path if @pg_ctl_path
 
     @pg_ctl_path = `which pg_ctl 2> /dev/null`.strip
-    if @pg_ctl_path.length == 0
-      @pg_ctl_path = "#{pg_bin_path}/pg_ctl"
-    end
+    @pg_ctl_path = "#{pg_bin_path}/pg_ctl" if @pg_ctl_path.length == 0
 
     @pg_ctl_path
   end
@@ -118,11 +110,18 @@ class DevBench
     return @initdb_path if @initdb_path
 
     @initdb_path = `which initdb 2> /dev/null`.strip
-    if @initdb_path.length == 0
-      @initdb_path = "#{pg_bin_path}/initdb"
-    end
+    @initdb_path = "#{pg_bin_path}/initdb" if @initdb_path.length == 0
 
     @initdb_path
+  end
+
+  def pg_dump_path
+    return @pg_dump_path if @pg_dump_path
+
+    @pg_dump_path = `which pg_dump 2> /dev/null`.strip
+    @pg_dump_path = "#{pg_bin_path}/pg_dump" if @pg_dump_path.length == 0
+
+    @pg_dump_path
   end
 
   def start_postgres
@@ -131,17 +130,18 @@ class DevBench
 
     FileUtils.mkdir PG_SOCK_PATH
     conf = File.read(PG_CONF)
-    File.write(PG_CONF, conf + "\nport = #{pg_port}\nunix_socket_directories = '#{PG_SOCK_PATH}'")
+    File.write(
+      PG_CONF,
+      conf + "\nport = #{pg_port}\nunix_socket_directories = '#{PG_SOCK_PATH}'"
+    )
 
     puts "Starting postgres on port: #{pg_port}"
-    ENV['DISCOURSE_PG_PORT'] = pg_port.to_s
+    ENV["DISCOURSE_PG_PORT"] = pg_port.to_s
 
-    Thread.new do
-      `#{pg_ctl_path} -D '#{PG_PATH}' start`
-    end
+    Thread.new { `#{pg_ctl_path} -D '#{PG_PATH}' start` }
 
     puts "Waiting for PG server to start..."
-    while !`#{pg_ctl_path} -D '#{PG_PATH}' status`.include?('server is running')
+    while !`#{pg_ctl_path} -D '#{PG_PATH}' status`.include?("server is running")
       sleep 0.1
     end
 
@@ -153,12 +153,15 @@ class DevBench
     `createdb -h localhost -p #{pg_port} discourse_test`
     `psql -h localhost -p #{pg_port} discourse_test < '#{DB_TEST_DUMP}'`
 
+    `createdb -h localhost -p #{pg_port} discourse_test_multisite`
+    `psql -h localhost -p #{pg_port} discourse_test_multisite < '#{DB_TEST_MULTISITE_DUMP}'`
+
     puts "PG server is ready and DB is loaded"
   end
 
   def stop_redis
     # print "Stopping redis #{redis_pid} ..."
-    Process.kill('QUIT', redis_pid)
+    Process.kill("QUIT", redis_pid)
     Process.waitpid(redis_pid)
     # puts " stopped"
   end
@@ -169,14 +172,14 @@ class DevBench
       Process.spawn(
         "redis-server",
         REDIS_CONF,
-        '--port',
+        "--port",
         redis_port.to_s,
-        '--dir',
+        "--dir",
         REDIS_PATH,
-        out: '/dev/null'
+        out: "/dev/null"
       )
     )
-    ENV['DISCOURSE_REDIS_PORT'] = redis_port.to_s
+    ENV["DISCOURSE_REDIS_PORT"] = redis_port.to_s
 
     puts "Redis server is started in pid #{redis_pid} port: #{redis_port}"
   end
@@ -198,9 +201,7 @@ class DevBench
 
       duration = finish - start
 
-      if @verbose
-        puts "duration: #{(duration * 1000)}ms"
-      end
+      puts "duration: #{(duration * 1000)}ms" if @verbose
 
       since_gc += duration
 
@@ -226,32 +227,33 @@ class DevBench
 
     threads = args.delete(:threads)
 
-    (1..threads).map do
-      Thread.new do
-        r, w = IO.pipe
+    (1..threads)
+      .map do
+        Thread.new do
+          r, w = IO.pipe
 
-        pid = fork do
-          require File.expand_path('../config/environment', __FILE__)
-          mean, deviation = measure(**args) do
-            yield
-          end
+          pid =
+            fork do
+              require File.expand_path("../config/environment", __FILE__)
+              mean, deviation = measure(**args) { yield }
+              r.close
+              w.puts mean.to_s
+              w.puts deviation.to_s
+            end
+
+          w.close
+
+          Process.wait pid
+
+          mean, deviation = r.read.split("\n")
+
           r.close
-          w.puts mean.to_s
-          w.puts deviation.to_s
+
+          means << mean.to_f
+          deviations << deviation.to_f
         end
-
-        w.close
-
-        Process.wait pid
-
-        mean, deviation = r.read.split("\n")
-
-        r.close
-
-        means << mean.to_f
-        deviations << deviation.to_f
       end
-    end.each(&:join)
+      .each(&:join)
 
     [means.mean / threads.to_f, deviations.mean / threads.to_f]
   end
@@ -324,16 +326,14 @@ class DevBench
   end
 
   test "PBKdf2 64000 sha256" do
-    Pbkdf2.hash_password(SecureRandom.hex, SecureRandom.hex, 64000, "sha256")
+    Pbkdf2.hash_password(SecureRandom.hex, SecureRandom.hex, 64_000, "sha256")
   end
 
   def self.readme_md
     @readme_md ||= File.read("README.md")
   end
 
-  test("Cook README.md", warmup: 30) do
-    PrettyText.cook(readme_md)
-  end
+  test("Cook README.md", warmup: 30) { PrettyText.cook(readme_md) }
 
   test("Discourse Boot", mode: :secs, warmup: 1, iterations: 4) do
     `bin/rails r Post.first`
@@ -375,7 +375,7 @@ class DevBench
 
   def run_tests(threads = 1)
     puts
-    puts "Running benchmark on #{threads} core#{threads > 1 ? "s" : "" }"
+    puts "Running benchmark on #{threads} core#{threads > 1 ? "s" : ""}"
     puts "-" * 20
     puts
 
@@ -395,8 +395,10 @@ class DevBench
 
   def about
     begin
-      require 'facter'
-      raise LoadError if Gem::Version.new(Facter.version) < Gem::Version.new("4.0")
+      require "facter"
+      if Gem::Version.new(Facter.version) < Gem::Version.new("4.0")
+        raise LoadError
+      end
     rescue LoadError
       puts "Installing facter to gather system info, please re-run"
       `gem install facter`
@@ -407,20 +409,24 @@ class DevBench
     facts = Facter.to_hash
 
     cores = Etc.nprocessors
-    facts.delete_if { |k, v|
-      !["operatingsystem", "architecture", "kernelversion",
-      "memorysize", "physicalprocessorcount", "processor0",
-      "virtual"].include?(k)
-    }
+    facts.delete_if do |k, v|
+      !%w[
+        operatingsystem
+        architecture
+        kernelversion
+        memorysize
+        physicalprocessorcount
+        processor0
+        virtual
+      ].include?(k)
+    end
 
     puts
     puts
     puts "System Info"
     puts "-" * 20
 
-    facts.each do |k, v|
-      puts "#{k}: #{v}"
-    end
+    facts.each { |k, v| puts "#{k}: #{v}" }
     puts "cores: #{cores}"
     puts "ruby: #{RUBY_VERSION}"
     puts `#{pg_ctl_path} --version`
@@ -444,29 +450,30 @@ class DevBench
   end
 
   def parse_args
-    opts = OptionParser.new do |o|
-      o.banner = "Usage: ./bench [options]"
+    opts =
+      OptionParser.new do |o|
+        o.banner = "Usage: ./bench [options]"
 
-      o.on("-v", "--verbose", "Verbose output") do
-        @verbose = true
-      end
+        o.on("-v", "--verbose", "Verbose output") { @verbose = true }
 
-      o.on("-s", "--single", "Only run single process benchmarks") do
-        @single = true
-      end
-      o.on("-t", "--test [STRING]", "Run a single test") do |t|
-        @test = @@tests.find { |name, _| name == t }
-        if !@test
-          raise OptionParser::InvalidArgument, "Can not find test"
+        o.on("-s", "--single", "Only run single process benchmarks") do
+          @single = true
+        end
+        o.on("-t", "--test [STRING]", "Run a single test") do |t|
+          @test = @@tests.find { |name, _| name == t }
+          raise OptionParser::InvalidArgument, "Can not find test" if !@test
+        end
+        o.on(
+          "-p",
+          "--profile [STRING]",
+          "Run a single test in profile mode"
+        ) do |s|
+          @profiled_test = @@tests.find { |name, _| name == s }
+          if !@profiled_test
+            raise OptionParser::InvalidArgument, "Can not find test"
+          end
         end
       end
-      o.on("-p", "--profile [STRING]", "Run a single test in profile mode") do |s|
-        @profiled_test = @@tests.find { |name, _| name == s }
-        if !@profiled_test
-          raise OptionParser::InvalidArgument, "Can not find test"
-        end
-      end
-    end
     begin
       opts.parse!
     rescue => e
@@ -476,7 +483,6 @@ class DevBench
       puts opts.help
       exit 1
     end
-
   end
 
   def profile_test
@@ -485,68 +491,74 @@ class DevBench
     puts "Profiling #{name}"
     puts
 
-    pid = fork do
-      require File.expand_path('../config/environment', __FILE__)
+    pid =
+      fork do
+        require File.expand_path("../config/environment", __FILE__)
 
-      Scheduler::Defer.async = false
+        Scheduler::Defer.async = false
 
-      MethodProfiler.ensure_discourse_instrumentation!
+        MethodProfiler.ensure_discourse_instrumentation!
 
-      100.times do |i|
-        GC.disable
-        MethodProfiler.start
-        blk.call
-        result = MethodProfiler.stop
-
-        redis_duration = (result.dig(:redis, :duration).to_f * 1000).round(2)
-        redis_calls = result.dig(:redis, :calls) || 0
-        sql_duration = (result.dig(:sql, :duration).to_f * 1000).round(2)
-        sql_calls = result.dig(:sql, :calls) || 0
-
-        puts "Run #{i}: #{(result[:total_duration] * 1000).round(2)}ms (sql: #{sql_duration}ms - #{sql_calls} calls, redis: #{redis_duration}ms - #{redis_calls} calls)"
-        GC.enable
-        GC.start
-      end
-
-      puts
-      GC.disable
-      Benchmark.bm do |x|
-        x.report(name) do
+        100.times do |i|
+          GC.disable
+          MethodProfiler.start
           blk.call
+          result = MethodProfiler.stop
+
+          redis_duration = (result.dig(:redis, :duration).to_f * 1000).round(2)
+          redis_calls = result.dig(:redis, :calls) || 0
+          sql_duration = (result.dig(:sql, :duration).to_f * 1000).round(2)
+          sql_calls = result.dig(:sql, :calls) || 0
+
+          puts "Run #{i}: #{(result[:total_duration] * 1000).round(2)}ms (sql: #{sql_duration}ms - #{sql_calls} calls, redis: #{redis_duration}ms - #{redis_calls} calls)"
+          GC.enable
+          GC.start
         end
+
+        puts
+        GC.disable
+        Benchmark.bm { |x| x.report(name) { blk.call } }
+        GC.enable
+
+        require "stackprof"
+        tmp = Tempfile.new("prof")
+        tmp.close
+
+        GC.disable
+        StackProf.run(mode: :wall, out: tmp.path) { blk.call }
+        GC.enable
+
+        puts "Stackprof report"
+        StackProf::Report.new(Marshal.load(IO.binread(tmp.path))).print_text
+
+        tmp.unlink
       end
-      GC.enable
-
-      require 'stackprof'
-      tmp = Tempfile.new('prof')
-      tmp.close
-
-      GC.disable
-      StackProf.run(mode: :wall, out: tmp.path) do
-        blk.call
-      end
-      GC.enable
-
-      puts "Stackprof report"
-      StackProf::Report.new(Marshal.load(IO.binread(tmp.path))).print_text
-
-      tmp.unlink
-
-    end
 
     Process.wait pid
   end
 
   def clear_env
-    ENV.each do |k, v|
-      ENV.delete k if k.start_with? "DISCOURSE"
-    end
+    ENV.each { |k, v| ENV.delete k if k.start_with? "DISCOURSE" }
   end
 
   def test_it
+    `bundle && yarn`
     clear_env
     start_redis
     start_postgres
+
+    # to update dbs you can use
+    #`bin/rake db:migrate`
+    #`RAILS_ENV=test bin/rake db:migrate`
+    #puts `pg_dump -h localhost -p #{pg_port} -d discourse_development > '#{DB_DUMP}'`
+    #puts `pg_dump -h localhost -p #{pg_port} -d discourse_test > '#{DB_TEST_DUMP}'`
+    #puts `pg_dump -h localhost -p #{pg_port} -d discourse_test_multisite > '#{DB_TEST_MULTISITE_DUMP}'`
+    #puts `RAILS_ENV=test bundle exec rake spec SPEC=spec/models/post_spec.rb SPEC_OPTS="--seed 1"`
+    #puts `bin/rake rspec spec/models/post_spec.rb --seed 1`
+    #gets
+
+    #return
+
     self.class.random_file_init
 
     if @profiled_test
@@ -554,9 +566,7 @@ class DevBench
     else
       run_tests
 
-      if !@single
-        run_tests(Etc.nprocessors)
-      end
+      run_tests(Etc.nprocessors) if !@single
     end
 
     about

@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
 class Wizard
-
   attr_reader :steps, :user
   attr_accessor :max_topics_to_require_completion
+
+  @@excluded_steps = []
 
   def initialize(user)
     @steps = []
@@ -16,13 +17,30 @@ class Wizard
     Step.new(step_name)
   end
 
-  def append_step(step)
-    step = create_step(step) if step.is_a?(String)
+  def append_step(step, after: nil)
+    return if @@excluded_steps.include?(step)
 
+    step = create_step(step) if step.is_a?(String)
     yield step if block_given?
 
-    last_step = @steps.last
+    if after
+      before_step = @steps.detect { |s| s.id == after }
 
+      if before_step
+        step.previous = before_step
+        step.index = before_step.index + 1
+        if before_step.next
+          step.next = before_step.next
+          before_step.next.previous = step
+        end
+        before_step.next = step
+        @steps.insert(before_step.index + 1, step)
+        step.index += 1 while (step = step.next)
+        return
+      end
+    end
+
+    last_step = @steps.last
     @steps << step
 
     # If it's the first step
@@ -36,20 +54,42 @@ class Wizard
     end
   end
 
+  def remove_step(step_id)
+    i = @steps.index { |step| step.id == step_id }
+    return if i.nil?
+
+    step = @steps.delete_at(i)
+
+    step.previous.next = step.next if step.previous
+
+    while step = step.next
+      step.index -= 1
+      if step.index == 0
+        step.previous = nil
+        @first_step = step
+      else
+        step.previous = @steps[step.index - 1]
+      end
+    end
+  end
+
+  def self.exclude_step(step)
+    @@excluded_steps << step
+  end
+
   def steps_with_fields
     @steps_with_fields ||= @steps.select(&:has_fields?)
   end
 
   def start
-    completed = UserHistory.where(
-      action: UserHistory.actions[:wizard_step],
-      context: steps_with_fields.map(&:id)
-    ).uniq.pluck(:context)
+    completed =
+      UserHistory
+        .where(action: UserHistory.actions[:wizard_step], context: steps_with_fields.map(&:id))
+        .uniq
+        .pluck(:context)
 
     # First uncompleted step
-    steps_with_fields.each do |s|
-      return s unless completed.include?(s.id)
-    end
+    steps_with_fields.each { |s| return s unless completed.include?(s.id) }
 
     @first_step
   end
@@ -66,10 +106,12 @@ class Wizard
   def completed_steps?(steps)
     steps = [steps].flatten.uniq
 
-    completed = UserHistory.where(
-      action: UserHistory.actions[:wizard_step],
-      context: steps
-    ).distinct.order(:context).pluck(:context)
+    completed =
+      UserHistory
+        .where(action: UserHistory.actions[:wizard_step], context: steps)
+        .distinct
+        .order(:context)
+        .pluck(:context)
 
     steps.sort == completed
   end
@@ -83,13 +125,7 @@ class Wizard
       return false
     end
 
-    first_admin_id = User.where(admin: true)
-      .human_users
-      .joins(:user_auth_tokens)
-      .order('user_auth_tokens.created_at')
-      .pluck_first(:id)
-
-    if @user&.id && first_admin_id == @user.id
+    if @user&.id && User.first_login_admin_id == @user.id
       !Wizard::Builder.new(@user).build.completed?
     else
       false
@@ -99,5 +135,4 @@ class Wizard
   def self.user_requires_completion?(user)
     self.new(user).requires_completion?
   end
-
 end

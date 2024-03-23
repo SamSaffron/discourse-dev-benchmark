@@ -1,34 +1,37 @@
 # frozen_string_literal: true
 
 class Admin::SiteTextsController < Admin::AdminController
-
   def self.preferred_keys
-    ['system_messages.usage_tips.text_body_template',
-     'education.new-topic',
-     'education.new-reply',
-     'login_required.welcome_message']
+    %w[
+      system_messages.usage_tips.text_body_template
+      education.new-topic
+      education.new-reply
+      login_required.welcome_message
+    ]
   end
 
   def self.restricted_keys
-    ['user_notifications.confirm_old_email.title',
-     'user_notifications.confirm_old_email.subject_template',
-     'user_notifications.confirm_old_email.text_body_template']
+    %w[
+      user_notifications.confirm_old_email.title
+      user_notifications.confirm_old_email.subject_template
+      user_notifications.confirm_old_email.text_body_template
+    ]
   end
 
   def index
-    overridden = params[:overridden] == 'true'
+    overridden = params[:overridden] == "true"
+    outdated = params[:outdated] == "true"
     extras = {}
 
     query = params[:q] || ""
 
-    locale = params[:locale] || I18n.locale
-    raise Discourse::InvalidParameters.new(:locale) if !I18n.locale_available?(locale)
+    locale = fetch_locale(params[:locale])
 
-    if query.blank? && !overridden
+    if query.blank? && !overridden && !outdated
       extras[:recommended] = true
-      results = I18n.with_locale(locale) { self.class.preferred_keys.map { |k| record_for(k) } }
+      results = self.class.preferred_keys.map { |k| record_for(key: k, locale: locale) }
     else
-      results = I18n.with_locale(locale) { find_translations(query, overridden) }
+      results = find_translations(query, overridden, outdated, locale)
 
       if results.any?
         extras[:regex] = I18n::Backend::DiscourseI18n.create_search_regexp(query, as_string: true)
@@ -53,20 +56,37 @@ class Admin::SiteTextsController < Admin::AdminController
     last = first + per_page
 
     extras[:has_more] = true if results.size > last
-    render_serialized(results[first..last - 1], SiteTextSerializer, root: 'site_texts', rest_serializer: true, extras: extras, overridden_keys: overridden_keys)
+
+    if LocaleSiteSetting.fallback_locale(locale).present?
+      extras[:fallback_locale] = LocaleSiteSetting.fallback_locale(locale)
+    end
+
+    overridden = overridden_keys(locale)
+    render_serialized(
+      results[first..last - 1],
+      SiteTextSerializer,
+      root: "site_texts",
+      rest_serializer: true,
+      extras: extras,
+      overridden_keys: overridden,
+    )
   end
 
   def show
-    site_text = find_site_text
-    render_serialized(site_text, SiteTextSerializer, root: 'site_text', rest_serializer: true)
+    locale = fetch_locale(params[:locale])
+    site_text = find_site_text(locale)
+    render_serialized(site_text, SiteTextSerializer, root: "site_text", rest_serializer: true)
   end
 
   def update
-    site_text = find_site_text
-    value = site_text[:value] = params[:site_text][:value]
+    locale = fetch_locale(params.dig(:site_text, :locale))
+
+    site_text = find_site_text(locale)
+    value = site_text[:value] = params.dig(:site_text, :value)
     id = site_text[:id]
-    old_value = I18n.t(id)
-    translation_override = TranslationOverride.upsert!(I18n.locale, id, value)
+    old_value = I18n.with_locale(locale) { I18n.t(id) }
+
+    translation_override = TranslationOverride.upsert!(locale, id, value)
 
     if translation_override.errors.empty?
       StaffActionLogger.new(current_user).log_site_text_change(id, value, old_value)
@@ -76,54 +96,73 @@ class Admin::SiteTextsController < Admin::AdminController
           :bulk_user_title_update,
           new_title: value,
           granted_badge_id: system_badge_id,
-          action: Jobs::BulkUserTitleUpdate::UPDATE_ACTION
+          action: Jobs::BulkUserTitleUpdate::UPDATE_ACTION,
         )
       end
-      render_serialized(site_text, SiteTextSerializer, root: 'site_text', rest_serializer: true)
+      render_serialized(site_text, SiteTextSerializer, root: "site_text", rest_serializer: true)
     else
-      render json: failed_json.merge(
-        message: translation_override.errors.full_messages.join("\n\n")
-      ), status: 422
+      render json:
+               failed_json.merge(message: translation_override.errors.full_messages.join("\n\n")),
+             status: 422
     end
   end
 
   def revert
-    site_text = find_site_text
+    locale = fetch_locale(params[:locale])
+
+    site_text = find_site_text(locale)
     id = site_text[:id]
-    old_text = I18n.t(id)
-    TranslationOverride.revert!(I18n.locale, id)
-    site_text = find_site_text
+    old_text = I18n.with_locale(locale) { I18n.t(id) }
+    TranslationOverride.revert!(locale, id)
+
+    site_text = find_site_text(locale)
     StaffActionLogger.new(current_user).log_site_text_change(id, site_text[:value], old_text)
     system_badge_id = Badge.find_system_badge_id_from_translation_key(id)
     if system_badge_id.present?
       Jobs.enqueue(
         :bulk_user_title_update,
         granted_badge_id: system_badge_id,
-        action: Jobs::BulkUserTitleUpdate::RESET_ACTION
+        action: Jobs::BulkUserTitleUpdate::RESET_ACTION,
       )
     end
-    render_serialized(site_text, SiteTextSerializer, root: 'site_text', rest_serializer: true)
+    render_serialized(site_text, SiteTextSerializer, root: "site_text", rest_serializer: true)
+  end
+
+  def dismiss_outdated
+    locale = fetch_locale(params[:locale])
+    override = TranslationOverride.find_by(locale: locale, translation_key: params[:id])
+
+    raise Discourse::NotFound if override.blank?
+
+    if override.outdated?
+      override.update!(
+        status: "up_to_date",
+        original_translation:
+          I18n.overrides_disabled do
+            I18n.t(TranslationOverride.transform_pluralized_key(params[:id]), locale: :en)
+          end,
+      )
+      render json: success_json
+    else
+      render json: failed_json.merge(message: "Can only dismiss outdated translations"), status: 422
+    end
   end
 
   def get_reseed_options
     render_json_dump(
       categories: SeedData::Categories.with_default_locale.reseed_options,
-      topics: SeedData::Topics.with_default_locale.reseed_options
+      topics: SeedData::Topics.with_default_locale.reseed_options,
     )
   end
 
   def reseed
     hijack do
       if params[:category_ids].present?
-        SeedData::Categories.with_default_locale.update(
-          site_setting_names: params[:category_ids]
-        )
+        SeedData::Categories.with_default_locale.update(site_setting_names: params[:category_ids])
       end
 
       if params[:topic_ids].present?
-        SeedData::Topics.with_default_locale.update(
-          site_setting_names: params[:topic_ids]
-        )
+        SeedData::Topics.with_default_locale.update(site_setting_names: params[:topic_ids])
       end
 
       render json: success_json
@@ -133,43 +172,56 @@ class Admin::SiteTextsController < Admin::AdminController
   protected
 
   def is_badge_title?(id = "")
-    badge_parts = id.split('.')
-    badge_parts[0] == 'badges' && badge_parts[2] == 'name'
+    badge_parts = id.split(".")
+    badge_parts[0] == "badges" && badge_parts[2] == "name"
   end
 
-  def record_for(key, value = nil)
-    if key.ends_with?("_MF")
-      override = TranslationOverride.where(translation_key: key, locale: I18n.locale).pluck(:value)
-      value = override&.first
-    end
-
-    value ||= I18n.t(key)
-    { id: key, value: value }
+  def record_for(key:, value: nil, locale:)
+    en_key = TranslationOverride.transform_pluralized_key(key)
+    value ||= I18n.with_locale(locale) { I18n.t(key) }
+    interpolation_keys =
+      I18nInterpolationKeysFinder.find(I18n.overrides_disabled { I18n.t(en_key, locale: :en) })
+    custom_keys = TranslationOverride.custom_interpolation_keys(en_key)
+    { id: key, value: value, locale: locale, interpolation_keys: interpolation_keys + custom_keys }
   end
 
-  PLURALIZED_REGEX = /(.*)\.(zero|one|two|few|many|other)$/
+  PLURALIZED_REGEX = /(.*)\.(zero|one|two|few|many|other)\z/
 
-  def find_site_text
+  def find_site_text(locale)
     if self.class.restricted_keys.include?(params[:id])
-      raise Discourse::InvalidAccess.new(nil, nil, custom_message: 'email_template_cant_be_modified')
+      raise Discourse::InvalidAccess.new(
+              nil,
+              nil,
+              custom_message: "email_template_cant_be_modified",
+            )
     end
 
-    if I18n.exists?(params[:id]) || TranslationOverride.exists?(locale: I18n.locale, translation_key: params[:id])
-      return record_for(params[:id])
+    if I18n.exists?(params[:id], locale) ||
+         TranslationOverride.exists?(locale: locale, translation_key: params[:id])
+      return record_for(key: params[:id], locale: locale)
     end
 
     if PLURALIZED_REGEX.match(params[:id])
-      value = fix_plural_keys($1, {}).fetch($2.to_sym)
-      return record_for(params[:id], value) if value
+      value = fix_plural_keys($1, {}, locale).detect { |plural| plural[0] == $2.to_sym }
+      return record_for(key: params[:id], value: value[1], locale: value[2]) if value
     end
 
     raise Discourse::NotFound
   end
 
-  def find_translations(query, overridden)
+  def find_translations(query, overridden, outdated, locale)
     translations = Hash.new { |hash, key| hash[key] = {} }
+    search_results = I18n.with_locale(locale) { I18n.search(query, only_overridden: overridden) }
 
-    I18n.search(query, overridden: overridden).each do |key, value|
+    if outdated
+      outdated_keys =
+        TranslationOverride.where(status: %i[outdated invalid_interpolation_keys]).pluck(
+          :translation_key,
+        )
+      search_results.select! { |k, _| outdated_keys.include?(k) }
+    end
+
+    search_results.each do |key, value|
       if PLURALIZED_REGEX.match(key)
         translations[$1][$2] = value
       else
@@ -182,31 +234,49 @@ class Admin::SiteTextsController < Admin::AdminController
     translations.each do |key, value|
       next unless I18n.exists?(key, :en)
 
-      if value&.is_a?(Hash)
-        value = fix_plural_keys(key, value)
-        value.each do |plural_key, plural_value|
-          results << record_for("#{key}.#{plural_key}", plural_value)
+      if value.is_a?(Hash)
+        fix_plural_keys(key, value, locale).each do |plural|
+          plural_key = plural[0]
+          plural_value = plural[1]
+
+          results << record_for(
+            key: "#{key}.#{plural_key}",
+            value: plural_value,
+            locale: plural.last,
+          )
         end
       else
-        results << record_for(key, value)
+        results << record_for(key: key, value: value, locale: locale)
       end
     end
 
     results
   end
 
-  def fix_plural_keys(key, value)
+  def fix_plural_keys(key, value, locale)
     value = value.with_indifferent_access
-    plural_keys = I18n.t('i18n.plural.keys')
+    plural_keys = I18n.with_locale(locale) { I18n.t("i18n.plural.keys") }
     return value if value.keys.size == plural_keys.size && plural_keys.all? { |k| value.key?(k) }
 
     fallback_value = I18n.t(key, locale: :en, default: {})
     plural_keys.map do |k|
-      [k, value[k] || fallback_value[k] || fallback_value[:other]]
-    end.to_h
+      if value[k]
+        [k, value[k], locale]
+      else
+        [k, fallback_value[k] || fallback_value[:other], :en]
+      end
+    end
   end
 
-  def overridden_keys
-    TranslationOverride.where(locale: I18n.locale).pluck(:translation_key)
+  def overridden_keys(locale)
+    TranslationOverride.where(locale: locale).pluck(:translation_key)
+  end
+
+  def fetch_locale(locale_from_params)
+    locale_from_params.tap do |locale|
+      if locale.blank? || !I18n.locale_available?(locale)
+        raise Discourse::InvalidParameters.new(:locale)
+      end
+    end
   end
 end

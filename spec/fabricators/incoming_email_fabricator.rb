@@ -5,8 +5,10 @@ Fabricator(:incoming_email) do
   subject "Hello world"
   from_address "foo@example.com"
   to_addresses "someone@else.com"
+  imap_sync false
+  created_via 0
 
-  raw <<~RAW
+  raw <<~EMAIL
     Return-Path: <foo@example.com>
     From: Foo <foo@example.com>
     To: someone@else.com
@@ -18,5 +20,5 @@ Fabricator(:incoming_email) do
     Content-Transfer-Encoding: quoted-printable
 
     The body contains "Hello world" too.
-  RAW
+  EMAIL
 end

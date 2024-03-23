@@ -9,11 +9,17 @@ Discourse::Application.configure do
   # and recreated between test runs.  Don't rely on the data there!
   config.cache_classes = true
 
+  # Eager loading loads your entire application. When running a single test locally,
+  # this is usually not necessary, and can slow down your test suite. However, it's
+  # recommended that you enable it in continuous integration systems to ensure eager
+  # loading is working properly before deploying your code.
+  config.eager_load = ENV["CI"].present?
+
   # Configure static asset server for tests with Cache-Control for performance
   config.public_file_server.enabled = true
 
-  # don't consider reqs local so we can properly handle exceptions like we do in prd
-  config.consider_all_requests_local       = false
+  # don't consider reqs local so we can properly handle exceptions like we do in prod
+  config.consider_all_requests_local = false
 
   # disable caching
   config.action_controller.perform_caching = false
@@ -40,41 +46,71 @@ Discourse::Application.configure do
 
   # lower iteration count for test
   config.pbkdf2_iterations = 10
-  config.ember.variant = :development
 
   config.assets.compile = true
   config.assets.digest = false
 
-  config.eager_load = false
+  config.active_record.verbose_query_logs = true
+  config.active_record.query_log_tags_enabled = true
 
-  if ENV['RAILS_ENABLE_TEST_LOG']
+  config.active_record.query_log_tags = [
+    :application,
+    :controller,
+    :action,
+    {
+      request_path: ->(context) { context[:controller]&.request&.path },
+      thread_id: ->(context) { Thread.current.object_id }
+    }
+  ]
+
+  config.after_initialize do
+    ActiveRecord::LogSubscriber.backtrace_cleaner.add_silencer do |line|
+      line =~ %r{lib/freedom_patches}
+    end
+  end
+
+  if ENV["RAILS_ENABLE_TEST_LOG"]
     config.logger = Logger.new(STDOUT)
-    config.log_level = ENV['RAILS_TEST_LOG_LEVEL'].present? ? ENV['RAILS_TEST_LOG_LEVEL'].to_sym : :info
+    config.log_level =
+      (
+        if ENV["RAILS_TEST_LOG_LEVEL"].present?
+          ENV["RAILS_TEST_LOG_LEVEL"].to_sym
+        else
+          :info
+        end
+      )
   else
     config.logger = Logger.new(nil)
     config.log_level = :fatal
   end
 
-  if defined? RspecErrorTracker
+  if defined?(RspecErrorTracker)
     config.middleware.insert_after ActionDispatch::Flash, RspecErrorTracker
   end
 
   config.after_initialize do
     SiteSetting.defaults.tap do |s|
-      s.set_regardless_of_locale(:s3_upload_bucket, 'bucket')
+      s.set_regardless_of_locale(:s3_upload_bucket, "bucket")
       s.set_regardless_of_locale(:min_post_length, 5)
       s.set_regardless_of_locale(:min_first_post_length, 5)
       s.set_regardless_of_locale(:min_personal_message_post_length, 10)
-      s.set_regardless_of_locale(:crawl_images, false)
       s.set_regardless_of_locale(:download_remote_images_to_local, false)
       s.set_regardless_of_locale(:unique_posts_mins, 0)
       s.set_regardless_of_locale(:max_consecutive_replies, 0)
-      # disable plugins
-      if ENV['LOAD_PLUGINS'] == '1'
-        s.set_regardless_of_locale(:discourse_narrative_bot_enabled, false)
-      end
+
+      # Most existing tests were written assuming allow_uncategorized_topics
+      # was enabled, so we should set it to true.
+      s.set_regardless_of_locale(:allow_uncategorized_topics, true)
     end
 
     SiteSetting.refresh!
+  end
+
+  if ENV["CI"].present?
+    config.to_prepare do
+      ActiveSupport.on_load(:active_record_postgresqladapter) do
+        self.create_unlogged_tables = true
+      end
+    end
   end
 end

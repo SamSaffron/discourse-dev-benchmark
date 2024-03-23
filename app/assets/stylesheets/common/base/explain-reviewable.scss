@@ -18,7 +18,7 @@
   }
   tr.total {
     td {
-      background-color: $primary-low;
+      background-color: var(--primary-low);
       font-weight: bold;
     }
   }
@@ -28,10 +28,10 @@
   }
 
   .score-value-type {
-    color: $primary-medium;
+    color: var(--primary-medium);
   }
 
-  .op:last-of-type {
+  .op:first-of-type {
     display: none;
   }
 }

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 class ListableTopicSerializer < BasicTopicSerializer
-
   attributes :reply_count,
              :highest_post_number,
              :image_url,
@@ -14,6 +13,7 @@ class ListableTopicSerializer < BasicTopicSerializer
              :last_read_post_number,
              :unread,
              :new_posts,
+             :unread_posts,
              :pinned,
              :unpinned,
              :excerpt,
@@ -25,9 +25,24 @@ class ListableTopicSerializer < BasicTopicSerializer
              :bookmarked,
              :liked,
              :unicode_title,
-             :unread_by_group_member
+             :unread_by_group_member,
+             :thumbnails
 
   has_one :last_poster, serializer: BasicUserSerializer, embed: :objects
+
+  def image_url
+    object.image_url(enqueue_if_missing: true)
+  end
+
+  def thumbnails
+    extra_sizes = theme_modifier_helper.topic_thumbnail_sizes
+    object.thumbnail_info(enqueue_if_missing: true, extra_sizes: extra_sizes)
+  end
+
+  def include_thumbnails?
+    theme_modifier_helper.topic_thumbnail_sizes.present? ||
+      DiscoursePluginRegistry.topic_thumbnail_sizes.present?
+  end
 
   def include_unicode_title?
     object.title.match?(/:[\w\-+]+:/)
@@ -38,7 +53,7 @@ class ListableTopicSerializer < BasicTopicSerializer
   end
 
   def highest_post_number
-    (scope.is_staff? && object.highest_staff_post_number) || object.highest_post_number
+    (scope.is_whisperer? && object.highest_staff_post_number) || object.highest_post_number
   end
 
   def liked
@@ -60,7 +75,7 @@ class ListableTopicSerializer < BasicTopicSerializer
   def seen
     return true if !scope || !scope.user
     return true if object.user_data && !object.user_data.last_read_post_number.nil?
-    return true if object.category_user_data&.last_seen_at && object.created_at < object.category_user_data.last_seen_at
+    return true if object.dismissed
     return true if object.created_at < scope.user.user_option.treat_as_new_topic_start_date
     false
   end
@@ -98,20 +113,30 @@ class ListableTopicSerializer < BasicTopicSerializer
     object.excerpt
   end
 
-  alias :include_last_read_post_number? :has_user_data
+  alias include_last_read_post_number? has_user_data
 
+  # TODO: For backwards compatibility with themes,
+  #       Remove once Discourse 2.8 is released
   def unread
+    0
+  end
+  alias include_unread? has_user_data
+
+  # TODO: For backwards compatibility with themes,
+  #       Remove once Discourse 2.8 is released
+  def new_posts
     unread_helper.unread_posts
   end
-  alias :include_unread? :has_user_data
+  alias include_new_posts? has_user_data
 
-  def new_posts
-    unread_helper.new_posts
+  def unread_posts
+    unread_helper.unread_posts
   end
-  alias :include_new_posts? :has_user_data
+  alias include_unread_posts? has_user_data
 
   def include_excerpt?
-    pinned || SiteSetting.always_include_topic_excerpts
+    pinned || SiteSetting.always_include_topic_excerpts ||
+      theme_modifier_helper.serialize_topic_excerpts
   end
 
   def pinned
@@ -140,4 +165,9 @@ class ListableTopicSerializer < BasicTopicSerializer
     @unread_helper ||= Unread.new(object, object.user_data, scope)
   end
 
+  private
+
+  def theme_modifier_helper
+    @theme_modifier_helper ||= ThemeModifierHelper.new(request: scope.request)
+  end
 end

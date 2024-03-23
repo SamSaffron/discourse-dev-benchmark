@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'i18n/backend/pluralization'
+require "i18n/backend/pluralization"
 
 module I18n
   module Backend
@@ -14,13 +14,15 @@ module I18n
 
       def reload!
         @pluralizers = {}
+        # this calls `reload!` in our patch lib/freedom_patches/translate_accelerator.rb
+        I18n.reload!
         super
       end
 
       # force explicit loading
       def load_translations(*filenames)
         unless filenames.empty?
-          filenames.flatten.each { |filename| load_file(filename) }
+          self.class.sort_locale_files(filenames.flatten).each { |filename| load_file(filename) }
         end
       end
 
@@ -30,6 +32,13 @@ module I18n
         rescue I18n::InvalidPluralizationData => e
           raise e if I18n.fallbacks[locale] == [locale]
           throw(:exception, e)
+        end
+      end
+
+      def self.sort_locale_files(files)
+        files.sort.sort_by do |filename|
+          matches = /(?:client|server)-([1-9]|[1-9][0-9]|100)\..+\.yml/.match(filename)
+          matches&.[](1).to_i
         end
       end
 
@@ -44,14 +53,8 @@ module I18n
       end
 
       def search(locale, query)
-        results = {}
         regexp = self.class.create_search_regexp(query)
-
-        I18n.fallbacks[locale].each do |fallback|
-          find_results(regexp, results, translations[fallback])
-        end
-
-        results
+        find_results(regexp, {}, translations[locale])
       end
 
       protected
@@ -80,22 +83,36 @@ module I18n
         return existing_translations if scope.is_a?(Array) && scope.include?(:models)
 
         overrides = options.dig(:overrides, locale)
+        key = key.to_s
 
         if overrides
-          if existing_translations && options[:count]
-            remapped_translations =
-              if existing_translations.is_a?(Hash)
-                Hash[existing_translations.map { |k, v| ["#{key}.#{k}", v] }]
-              elsif existing_translations.is_a?(String)
-                Hash[[[key, existing_translations]]]
-              end
-
-            result = {}
-
-            remapped_translations.merge(overrides).each do |k, v|
-              result[k.split('.').last.to_sym] = v if k != key && k.start_with?(key.to_s)
+          if options[:count]
+            if !existing_translations
+              I18n.fallbacks[locale]
+                .drop(1)
+                .each do |fallback|
+                  existing_translations = super(fallback, key, scope, options)
+                  break if existing_translations.present?
+                end
             end
-            return result if result.size > 0
+
+            if existing_translations
+              remapped_translations =
+                if existing_translations.is_a?(Hash)
+                  Hash[existing_translations.map { |k, v| ["#{key}.#{k}", v] }]
+                elsif existing_translations.is_a?(String)
+                  Hash[[[key, existing_translations]]]
+                end
+
+              result = {}
+
+              remapped_translations
+                .merge(overrides)
+                .each do |k, v|
+                  result[k.split(".").last.to_sym] = v if k != key && k.start_with?(key)
+                end
+              return result if result.size > 0
+            end
           end
 
           return overrides[key] if overrides[key]
@@ -103,7 +120,6 @@ module I18n
 
         existing_translations
       end
-
     end
   end
 end

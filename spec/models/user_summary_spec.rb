@@ -1,9 +1,6 @@
 # frozen_string_literal: true
 
-require 'rails_helper'
-
-describe UserSummary do
-
+RSpec.describe UserSummary do
   it "produces secure summaries" do
     topic = create_post.topic
     user = topic.user
@@ -57,5 +54,40 @@ describe UserSummary do
 
     users = UserSummary.new(user, Guardian.new).most_liked_users
     expect(users).to eq([])
+  end
+
+  it "includes ordered top categories" do
+    u = Fabricate(:user)
+
+    UserSummary::MAX_SUMMARY_RESULTS.times do
+      c = Fabricate(:category)
+      t = Fabricate(:topic, category: c, user: u)
+      Fabricate(:post, user: u, topic: t)
+    end
+
+    top_category = Fabricate(:category)
+    t = Fabricate(:topic, category: top_category, user: u)
+    Fabricate(:post, user: u, topic: t)
+    Fabricate(:post, user: u, topic: t)
+
+    summary = UserSummary.new(u, Guardian.new)
+
+    expect(summary.top_categories.length).to eq(UserSummary::MAX_SUMMARY_RESULTS)
+    expect(summary.top_categories.first[:id]).to eq(top_category.id)
+  end
+
+  it "excludes moderator action posts" do
+    topic = create_post.topic
+    user = topic.user
+    create_post(user: user, topic: topic)
+    Fabricate(:small_action, topic: topic, user: user)
+
+    summary = UserSummary.new(user, Guardian.new)
+
+    expect(summary.topics.length).to eq(1)
+    expect(summary.replies.length).to eq(1)
+    expect(summary.top_categories.length).to eq(1)
+    expect(summary.top_categories.first[:topic_count]).to eq(1)
+    expect(summary.top_categories.first[:post_count]).to eq(1)
   end
 end

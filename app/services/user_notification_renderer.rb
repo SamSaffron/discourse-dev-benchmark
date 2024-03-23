@@ -9,11 +9,11 @@ class UserNotificationRenderer < ActionView::Base
 
   def self.render(*args)
     LOCK.synchronize do
-      @instance ||= UserNotificationRenderer.with_view_paths(
-        Rails.configuration.paths["app/views"]
-      )
+      @instance ||=
+        UserNotificationRenderer.with_empty_template_cache.with_view_paths(
+          Rails.configuration.paths["app/views"],
+        )
       @instance.render(*args)
     end
   end
-
 end

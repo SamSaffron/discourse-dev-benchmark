@@ -3,7 +3,7 @@
 class SiteController < ApplicationController
   layout false
   skip_before_action :preload_json, :check_xhr
-  skip_before_action :redirect_to_login_if_required, only: ['basic_info', 'statistics']
+  skip_before_action :redirect_to_login_if_required, only: %w[basic_info statistics]
 
   def site
     render json: Site.json_for(guardian)
@@ -25,16 +25,6 @@ class SiteController < ApplicationController
     render json: custom_emoji
   end
 
-  def selectable_avatars
-    avatars = if SiteSetting.selectable_avatars_enabled?
-      (SiteSetting.selectable_avatars.presence || "").split("\n")
-    else
-      []
-    end
-
-    render json: avatars, root: false
-  end
-
   def basic_info
     results = {
       logo_url: UrlHelper.absolute(SiteSetting.site_logo_url),
@@ -43,13 +33,16 @@ class SiteController < ApplicationController
       favicon_url: UrlHelper.absolute(SiteSetting.site_favicon_url),
       title: SiteSetting.title,
       description: SiteSetting.site_description,
-      header_primary_color: ColorScheme.hex_for_name('header_primary') || '333333',
-      header_background_color: ColorScheme.hex_for_name('header_background') || 'ffffff'
+      header_primary_color: ColorScheme.hex_for_name("header_primary") || "333333",
+      header_background_color: ColorScheme.hex_for_name("header_background") || "ffffff",
+      login_required: SiteSetting.login_required,
     }
 
     if mobile_logo_url = SiteSetting.site_mobile_logo_url.presence
       results[:mobile_logo_url] = UrlHelper.absolute(mobile_logo_url)
     end
+
+    results[:discourse_discover_enrolled] = true if SiteSetting.include_in_discourse_discover?
 
     DiscourseHub.stats_fetched_at = Time.zone.now if request.user_agent == "Discourse Hub"
 
@@ -58,7 +51,7 @@ class SiteController < ApplicationController
   end
 
   def statistics
-    return redirect_to path('/') unless SiteSetting.share_anonymized_statistics?
+    return redirect_to path("/") unless SiteSetting.share_anonymized_statistics?
     render json: About.fetch_cached_stats
   end
 end

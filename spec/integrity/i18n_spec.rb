@@ -1,26 +1,7 @@
 # frozen_string_literal: true
 
-require "rails_helper"
-require "i18n/duplicate_key_finder"
-
 def extract_locale(path)
   path[/\.([^.]{2,})\.yml$/, 1]
-end
-
-PLURALIZATION_KEYS ||= ['zero', 'one', 'two', 'few', 'many', 'other']
-ENGLISH_KEYS ||= ['one', 'other']
-
-def find_pluralizations(hash, parent_key = '', pluralizations = Hash.new)
-  hash.each do |key, value|
-    if Hash === value
-      current_key = parent_key.blank? ? key : "#{parent_key}.#{key}"
-      find_pluralizations(value, current_key, pluralizations)
-    elsif PLURALIZATION_KEYS.include? key
-      pluralizations[parent_key] = hash
-    end
-  end
-
-  pluralizations
 end
 
 def is_yaml_compatible?(english, translated)
@@ -39,38 +20,29 @@ def is_yaml_compatible?(english, translated)
   true
 end
 
-def each_translation(hash, parent_key = '', &block)
-  hash.each do |key, value|
-    current_key = parent_key.blank? ? key : "#{parent_key}.#{key}"
-
-    if Hash === value
-      each_translation(value, current_key, &block)
-    else
-      yield(current_key, value.to_s)
-    end
+def load_yaml(path)
+  if Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("3.1.0")
+    YAML.load_file(path, aliases: true)
+  else
+    YAML.load_file(path)
   end
 end
 
-describe "i18n integrity checks" do
-
-  it 'has an i18n key for each Trust Levels' do
-    TrustLevel.all.each do |ts|
-      expect(ts.name).not_to match(/translation missing/)
-    end
-  end
-
+RSpec.describe "i18n integrity checks" do
   it "has an i18n key for each Site Setting" do
     SiteSetting.all_settings.each do |s|
-      next if s[:setting][/^test_/]
-      expect(s[:description]).not_to match(/translation missing/)
+      next if s[:plugin] == SiteSetting::SAMPLE_TEST_PLUGIN.name
+      expect(s[:description]).not_to match(/Translation missing/)
     end
   end
 
   it "has an i18n key for each Badge description" do
-    Badge.where(system: true).each do |b|
-      expect(b.long_description).to be_present
-      expect(b.description).to be_present
-    end
+    Badge
+      .where(system: true)
+      .each do |b|
+        expect(b.long_description).to be_present
+        expect(b.description).to be_present
+      end
   end
 
   Dir["#{Rails.root}/config/locales/{client,server}.*.yml"].each do |path|
@@ -85,7 +57,7 @@ describe "i18n integrity checks" do
 
   Dir["#{Rails.root}/config/locales/client.*.yml"].each do |path|
     it "has valid client YAML for '#{path}'" do
-      yaml = YAML.load_file(path)
+      yaml = load_yaml(path)
       locale = extract_locale(path)
 
       expect(yaml.keys).to eq([locale])
@@ -100,65 +72,12 @@ describe "i18n integrity checks" do
   end
 
   Dir["#{Rails.root}/**/locale*/*.en.yml"].each do |english_path|
-    english_yaml = YAML.load_file(english_path)["en"]
+    english_yaml = load_yaml(english_path)["en"]
 
     context(english_path) do
       it "has no duplicate keys" do
         english_duplicates = DuplicateKeyFinder.new.find_duplicates(english_path)
         expect(english_duplicates).to be_empty
-      end
-
-      context "pluralizations" do
-        wrong_keys = []
-        invald_one_keys = []
-
-        find_pluralizations(english_yaml).each do |key, hash|
-          next if key["messages.restrict_dependent_destroy"]
-
-          wrong_keys << key if hash.keys.sort != ENGLISH_KEYS
-
-          if one_value = hash['one']
-            invald_one_keys << key if one_value.include?('1') && !one_value.match?(/%{count}|{{count}}/)
-          end
-        end
-
-        it "has valid pluralizations keys" do
-          keys = wrong_keys.join("\n")
-          expect(wrong_keys).to be_empty, <<~MSG
-            Pluralized strings must have only the sub-keys 'one' and 'other'.
-            The following keys have missing or additional keys:\n\n#{keys}
-          MSG
-        end
-
-        it "should use %{count} instead of 1 in 'one' keys" do
-          keys = invald_one_keys.join(".one\n")
-          expect(invald_one_keys).to be_empty, <<~MSG
-            The following keys contain the number 1 instead of the interpolation key %{count}:\n\n#{keys}
-          MSG
-        end
-      end
-
-      context "valid translations" do
-        invalid_relative_links = {}
-        invalid_relative_image_sources = {}
-
-        each_translation(english_yaml) do |key, value|
-          if value.match?(/href\s*=\s*["']\/[^\/]|\]\(\/[^\/]/i)
-            invalid_relative_links[key] = value
-          elsif value.match?(/src\s*=\s*["']\/[^\/]/i)
-            invalid_relative_image_sources[key] = value
-          end
-        end
-
-        it "uses %{base_url} or %{base_path} for relative links" do
-          keys = invalid_relative_links.keys.join("\n")
-          expect(invalid_relative_links).to be_empty, "The following keys have relative links, but do not start with %{base_url} or %{base_path}:\n\n#{keys}"
-        end
-
-        it "uses %{base_url} or %{base_path} for relative image src" do
-          keys = invalid_relative_image_sources.keys.join("\n")
-          expect(invalid_relative_image_sources).to be_empty, "The following keys have relative image sources, but do not start with %{base_url} or %{base_path}:\n\n#{keys}"
-        end
       end
     end
 
@@ -167,7 +86,7 @@ describe "i18n integrity checks" do
 
       context(path) do
         locale = extract_locale(path)
-        yaml = YAML.load_file(path)
+        yaml = load_yaml(path)
 
         it "has no duplicate keys" do
           duplicates = DuplicateKeyFinder.new.find_duplicates(path)
@@ -179,16 +98,40 @@ describe "i18n integrity checks" do
         end
 
         unless path["transliterate"]
-
           it "is compatible with english" do
             expect(is_yaml_compatible?(english_yaml, yaml)).to eq(true)
           end
-
         end
-
       end
-
     end
   end
+end
 
+RSpec.describe "fallbacks" do
+  before do
+    I18n.backend = I18n::Backend::DiscourseI18n.new
+    I18n.fallbacks = I18n::Backend::FallbackLocaleList.new
+    I18n.reload!
+    I18n.init_accelerator!
+  end
+
+  it "finds the fallback translation" do
+    I18n.backend.store_translations(:en, test: "en test")
+
+    I18n.with_locale("pl_PL") { expect(I18n.t("test")).to eq("en test") }
+  end
+
+  context "when in a multi-threaded environment" do
+    it "finds the fallback translation" do
+      I18n.backend.store_translations(:en, test: "en test")
+
+      thread = Thread.new { I18n.with_locale("pl_PL") { expect(I18n.t("test")).to eq("en test") } }
+
+      begin
+        thread.join
+      ensure
+        thread.exit
+      end
+    end
+  end
 end

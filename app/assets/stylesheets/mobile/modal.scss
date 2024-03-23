@@ -1,5 +1,69 @@
 // base styles for every modal popup used in Discourse
 
+// prevents bg scrolling when modal is open
+html:has(.d-modal) {
+  overflow: hidden;
+}
+
+html.keyboard-visible.mobile-view {
+  .d-modal {
+    max-height: calc(var(--composer-vh, var(--1dvh)) * 100);
+    height: calc(var(--composer-vh, var(--1dvh)) * 100);
+    bottom: 0;
+  }
+
+  .d-modal__container {
+    max-height: calc(var(--composer-vh, var(--1dvh)) * 100);
+    height: calc(var(--composer-vh, var(--1dvh)) * 100);
+  }
+}
+
+html:not(.keyboard-visible.mobile-view) {
+  .d-modal__container {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+.d-modal {
+  align-items: flex-end;
+
+  &__container {
+    // this is a hack to prevent issues on safari with transforms
+    position: fixed;
+
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(var(--composer-vh, var(--1dvh)) * 85);
+    will-change: auto;
+  }
+
+  &__header {
+    padding: 0.5rem;
+  }
+
+  .ios-device & {
+    &__footer {
+      margin-top: auto;
+    }
+  }
+
+  &__title-text {
+    font-size: var(--font-up-1-rem);
+  }
+
+  // fixes modal placement on Android when keyboard is visible
+  html.keyboard-visible:not(.ios-device) & {
+    height: calc(100% - env(keyboard-inset-height));
+
+    .d-modal__container {
+      max-height: 100%;
+      min-height: 100%;
+      height: 100%;
+    }
+  }
+}
+
+//legacy
 .modal-open #main {
   overflow: hidden;
 }
@@ -25,6 +89,8 @@
   }
   .modal-body {
     padding: 0.667em;
+    overflow-y: scroll;
+
     > * {
       // adding box-sizing: border-box; to .modal-body causes iOS dropdown issues
       box-sizing: border-box;
@@ -32,78 +98,14 @@
   }
 }
 
-// we need a little extra room on mobile for the
-// stuff inside the footer to fit
-.modal-footer {
-  padding: 10px;
-}
-
-.modal-header {
-  padding: 10px;
-  h3 {
-    font-size: $font-up-2;
-  }
-}
-
 .close {
-  font-size: $font-up-4;
-}
-
-#choosing-topic {
-  p {
-    margin-top: 0;
-    padding-bottom: 0;
-  }
-
-  input[type="radio"] {
-    margin-right: 10px;
-  }
-
-  .category-chooser {
-    margin-bottom: 9px;
-  }
-
-  button {
-    margin-top: 10px;
-    display: block;
-    width: 300px;
-  }
-
-  form {
-    margin-top: 20px;
-    input:not(.filter-input)[type="text"] {
-      box-sizing: border-box;
-      width: 100%;
-    }
-  }
+  font-size: var(--font-up-4);
 }
 
 @media only screen and (max-device-width: 568px) {
-  .modal .flag-modal .flag-message {
+  .flag-modal-body .flag-message {
     height: 3em;
   }
-}
-
-.edit-category-modal {
-  .modal-body {
-    position: relative;
-    height: 350px;
-  }
-  &.small .modal-body {
-    height: 310px;
-  }
-
-  .disable_info_wrap .cannot_delete_reason {
-    top: -114px;
-    right: 8px;
-    min-width: 200px;
-  }
-}
-
-/* fixes for the new account confirm dialog on mobile */
-
-.modal-inner-container {
-  margin-bottom: 20px;
 }
 
 /* fix for tall modals */
@@ -116,8 +118,16 @@
     max-height: 90vh;
     overflow: auto;
   }
-}
 
-.modal .modal-body.reorder-categories {
-  max-height: calc(100vh - 220px);
+  &.insert-hyperlink-modal .modal-inner-container {
+    overflow: visible;
+  }
+
+  html.keyboard-visible:not(.ios-device) & {
+    height: calc(100% - env(keyboard-inset-height));
+
+    .modal-inner-container {
+      margin: auto;
+    }
+  }
 }

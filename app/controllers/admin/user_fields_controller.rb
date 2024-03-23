@@ -1,9 +1,19 @@
 # frozen_string_literal: true
 
 class Admin::UserFieldsController < Admin::AdminController
-
   def self.columns
-    [:name, :field_type, :editable, :description, :required, :show_on_profile, :show_on_user_card, :position]
+    columns = %i[
+      name
+      field_type
+      editable
+      description
+      required
+      show_on_profile
+      show_on_user_card
+      position
+      searchable
+    ]
+    DiscoursePluginRegistry.apply_modifier(:admin_user_fields_columns, columns)
   end
 
   def create
@@ -13,14 +23,12 @@ class Admin::UserFieldsController < Admin::AdminController
     field.required = params[:user_field][:required] == "true"
     update_options(field)
 
-    json_result(field, serializer: UserFieldSerializer) do
-      field.save
-    end
+    json_result(field, serializer: UserFieldSerializer) { field.save }
   end
 
   def index
     user_fields = UserField.all.includes(:user_field_options).order(:position)
-    render_serialized(user_fields, UserFieldSerializer, root: 'user_fields')
+    render_serialized(user_fields, UserFieldSerializer, root: "user_fields")
   end
 
   def update
@@ -28,14 +36,15 @@ class Admin::UserFieldsController < Admin::AdminController
     field = UserField.where(id: params.require(:id)).first
 
     Admin::UserFieldsController.columns.each do |col|
-      unless field_params[col].nil?
-        field.public_send("#{col}=", field_params[col])
-      end
+      field.public_send("#{col}=", field_params[col]) unless field_params[col].nil?
     end
     update_options(field)
 
     if field.save
-      render_serialized(field, UserFieldSerializer, root: 'user_field')
+      if !field.show_on_profile && !field.show_on_user_card
+        DirectoryColumn.where(user_field_id: field.id).destroy_all
+      end
+      render_serialized(field, UserFieldSerializer, root: "user_field")
     else
       render_json_error(field)
     end

@@ -8,7 +8,7 @@
   .header {
     display: flex;
     align-items: center;
-    border-bottom: 1px solid $primary-low;
+    border-bottom: 1px solid var(--primary-low);
     margin-bottom: 0.5em;
     padding-bottom: 0.5em;
   }
@@ -19,7 +19,7 @@
 
     .item {
       display: inline;
-      font-size: $font-up-1;
+      font-size: var(--font-up-1);
     }
 
     .all-reports .report-url {
@@ -30,16 +30,16 @@
       font-weight: 700;
 
       .report-url {
-        color: $primary;
+        color: var(--primary);
       }
 
       .info {
         cursor: pointer;
         margin-left: 0.25em;
-        color: $primary-low-mid;
+        color: var(--primary-low-mid);
 
         &:hover {
-          color: $primary-medium;
+          color: var(--primary-medium);
         }
       }
     }
@@ -51,27 +51,27 @@
 
     &.trending-down,
     &.high-trending-down {
-      color: $danger;
+      color: var(--danger);
     }
 
     &.trending-up,
     &.high-trending-up {
-      color: $success;
+      color: var(--success);
     }
 
     &.no-change {
-      color: $primary-medium;
+      color: var(--primary-medium);
       .d-icon {
         display: none;
       }
     }
 
     .value {
-      font-size: $font-up-1;
+      font-size: var(--font-up-1);
     }
 
     .icon {
-      font-size: $font-up-1;
+      font-size: var(--font-up-1);
       font-weight: 700;
     }
   }
@@ -91,32 +91,41 @@
     border: 1px solid transparent;
 
     a {
-      color: $primary-medium;
+      color: var(--primary-medium);
     }
 
     .d-icon {
       color: currentColor;
-      font-size: $font-up-5;
+      font-size: var(--font-up-5);
       display: block;
       margin: 0.25em auto;
     }
 
     &.no-data,
     &.rate-limited {
-      background: $secondary;
-      border-color: $primary-low;
-      color: $primary-low-mid;
+      background: var(--secondary);
+      border-color: var(--primary-low);
+      color: var(--primary-low-mid);
     }
 
     &.rate-limited .d-icon {
-      color: $danger;
+      color: var(--danger);
     }
 
     &.timeout,
     &.exception {
-      border-color: $danger-low;
-      color: $danger;
+      border-color: var(--danger-low);
+      color: var(--danger);
     }
+  }
+
+  .average-chart {
+    padding: 0.5em;
+    border: 1px solid var(--highlight);
+    color: var(--highlight);
+    margin-bottom: 1em;
+    text-align: center;
+    background: var(--highlight-bg);
   }
 
   .filters {
@@ -135,8 +144,20 @@
         flex: 1 0 0px;
 
         .mode-btn.is-current {
-          color: $tertiary;
+          color: var(--tertiary);
         }
+      }
+    }
+
+    .chart-groupings {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, 1fr);
+      grid-gap: 0.5em;
+      margin-bottom: 1em;
+
+      .chart-grouping.active {
+        background: var(--tertiary);
+        color: var(--secondary);
       }
     }
 
@@ -160,15 +181,6 @@
       .refresh-report-btn {
         width: 100%;
       }
-
-      .date-picker-wrapper {
-        width: 100%;
-        .date-picker {
-          box-sizing: border-box;
-          width: 100%;
-          margin: 0;
-        }
-      }
     }
   }
 }
@@ -188,5 +200,53 @@
 .admin-report.storage-stats {
   .main {
     flex: 1 0 auto;
+  }
+}
+
+.admin-reports-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--primary-low);
+  padding-bottom: 0.5em;
+
+  @media screen and (max-width: 400px) {
+    flex-wrap: wrap;
+  }
+
+  h2 {
+    margin: 0 0.5em 0 0;
+
+    a {
+      color: var(--primary);
+    }
+  }
+}
+
+.admin-reports-list {
+  display: flex;
+  flex-wrap: wrap;
+  list-style-type: none;
+  margin: 0 -1.5%;
+  &__report {
+    margin: 1.5%;
+    border: 1px solid var(--primary-low);
+    flex: 1 1 28%;
+    transition: box-shadow 0.25s;
+    min-width: 225px;
+    max-width: 550px;
+    a {
+      display: block;
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+      padding: 1em;
+      .report-description {
+        color: var(--primary-high);
+      }
+    }
+    &:hover {
+      box-shadow: var(--shadow-card);
+    }
   }
 }

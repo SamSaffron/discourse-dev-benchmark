@@ -7,16 +7,15 @@ class TopicPoster < OpenStruct
 
   def attributes
     {
-      'user' => user,
-      'description' => description,
-      'extras' => extras,
-      'id' => id,
-      'primary_group' => primary_group
+      "user" => user,
+      "description" => description,
+      "extras" => extras,
+      "id" => id,
+      "primary_group" => primary_group,
     }
   end
 
-  # TODO: Remove when old list is removed
-  def [](attr)
-    public_send(attr)
+  def name_and_description
+    I18n.t("js.user.avatar.name_and_description", name: user.display_name, description: description)
   end
 end

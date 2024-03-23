@@ -4,23 +4,23 @@ class Permalink < ActiveRecord::Base
   belongs_to :topic
   belongs_to :post
   belongs_to :category
+  belongs_to :tag
+  belongs_to :user
 
   before_validation :normalize_url
+
+  validates :url, uniqueness: true
 
   class Normalizer
     attr_reader :source
 
     def initialize(source)
       @source = source
-      if source.present?
-        @rules = source.split("|").map do |rule|
-          parse_rule(rule)
-        end.compact
-      end
+      @rules = source.split("|").map { |rule| parse_rule(rule) }.compact if source.present?
     end
 
     def parse_rule(rule)
-      return unless rule =~ /\/.*\//
+      return unless rule =~ %r{/.*/}
 
       escaping = false
       regex = +""
@@ -38,32 +38,27 @@ class Permalink < ActiveRecord::Base
         end
       end
 
-      if regex.length > 1
-        [Regexp.new(regex[1..-1]), sub[1..-1] || ""]
-      end
-
+      [Regexp.new(regex[1..-1]), sub[1..-1] || ""] if regex.length > 1
     end
 
     def normalize(url)
       return url unless @rules
-      @rules.each do |(regex, sub)|
-        url = url.sub(regex, sub)
-      end
+      @rules.each { |(regex, sub)| url = url.sub(regex, sub) }
 
       url
     end
-
   end
 
   def self.normalize_url(url)
     if url
       url = url.strip
-      url = url[1..-1] if url[0, 1] == '/'
+      url = url[1..-1] if url[0, 1] == "/"
     end
 
     normalizations = SiteSetting.permalink_normalizations
 
-    @normalizer = Normalizer.new(normalizations) unless @normalizer && @normalizer.source == normalizations
+    @normalizer = Normalizer.new(normalizations) unless @normalizer &&
+      @normalizer.source == normalizations
     @normalizer.normalize(url)
   end
 
@@ -77,18 +72,19 @@ class Permalink < ActiveRecord::Base
 
   def target_url
     return external_url if external_url
-    return "#{Discourse::base_uri}#{post.url}" if post
+    return "#{Discourse.base_path}#{post.url}" if post
     return topic.relative_url if topic
     return category.url if category
+    return tag.full_url if tag
+    return user.full_url if user
     nil
   end
 
   def self.filter_by(url = nil)
-    permalinks = Permalink
-      .includes(:topic, :post, :category)
-      .order('permalinks.created_at desc')
+    permalinks =
+      Permalink.includes(:topic, :post, :category, :tag, :user).order("permalinks.created_at desc")
 
-    permalinks.where!('url ILIKE :url OR external_url ILIKE :url', url: "%#{url}%") if url.present?
+    permalinks.where!("url ILIKE :url OR external_url ILIKE :url", url: "%#{url}%") if url.present?
     permalinks.limit!(100)
     permalinks.to_a
   end
@@ -106,6 +102,8 @@ end
 #  created_at   :datetime         not null
 #  updated_at   :datetime         not null
 #  external_url :string(1000)
+#  tag_id       :integer
+#  user_id      :integer
 #
 # Indexes
 #

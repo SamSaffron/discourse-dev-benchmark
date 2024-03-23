@@ -19,23 +19,28 @@
 
 .nav-pills {
   @extend %nav;
-  @extend .clearfix;
+
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
 
   > li {
-    float: left;
-    margin-right: 5px;
+    display: flex;
+    margin-right: 0.5em;
 
-    > a {
+    > a,
+    button {
       border: none;
+      border-radius: var(--d-nav-pill-border-radius);
       padding: 6px 12px;
-      color: $primary;
-      font-size: $font-up-1;
-      line-height: $line-height-small;
+      color: var(--primary);
+      font-size: var(--font-up-1);
+      line-height: var(--line-height-small);
       box-sizing: border-box;
       min-height: 30px;
       display: flex;
       align-items: center;
-      transition: background 0.15s;
+      transition: background-color 0.2s, color 0.2s;
 
       .d-icon {
         margin-right: 5px;
@@ -43,14 +48,15 @@
       }
 
       &:hover {
-        color: $quaternary;
-        background-color: $quaternary-low;
+        color: var(--quaternary);
+        background-color: var(--quaternary-low);
       }
     }
 
-    a.active {
-      color: $secondary;
-      background-color: $quaternary;
+    a.active,
+    button.active {
+      color: var(--secondary);
+      background-color: var(--quaternary);
 
       .d-icon {
         opacity: 1;
@@ -65,12 +71,10 @@
 .nav-stacked {
   @extend %nav;
   padding: 0;
-  overflow: hidden;
-  background: $primary-low;
+  background: var(--primary-low);
 
   li {
-    border-bottom: 1px solid $primary-low;
-    position: relative;
+    border-bottom: 1px solid var(--primary-low);
 
     &:last-of-type {
       border-bottom: 0;
@@ -83,36 +87,46 @@
 
   a {
     margin: 0;
-    padding: 13px;
-    font-size: $font-up-1;
-    line-height: $line-height-small;
+    padding: 0.75em;
+    line-height: var(--line-height-small);
     cursor: pointer;
-    color: $primary;
+    color: var(--primary);
+    @include ellipsis;
 
     &.active {
-      color: $secondary;
-      background-color: $quaternary;
+      color: var(--secondary);
+      background-color: var(--quaternary);
+      position: relative;
+
+      --arrow-thickness: 8px;
 
       &::after {
-        left: 90%;
-        top: 33%;
-        content: " ";
         position: absolute;
-        border: 8px solid transparent;
-        border-left-color: $secondary;
+        right: 0;
+        top: calc(50% - var(--arrow-thickness));
+        content: " ";
+        border: var(--arrow-thickness) solid transparent;
+        border-left-color: var(--secondary);
       }
     }
   }
 
   .count {
-    font-size: $font-down-1;
+    font-size: var(--font-down-1);
   }
 
   .glyph {
-    font-size: $font-down-1;
+    font-size: var(--font-down-1);
     width: 1.25em;
     text-align: center;
     margin-right: 0.25em;
-    line-height: $line-height-large;
+    line-height: var(--line-height-large);
+  }
+}
+
+.user-navigation .nav-pills > li {
+  a,
+  button {
+    border-radius: 0px;
   }
 }

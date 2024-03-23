@@ -1,29 +1,49 @@
-@import "./variables";
-@import "./mixins";
+// These CSS custom properties are added here instead of in variables.scss
+// because variables.scss is injected into every theme CSS file
+// which causes problems when overriding custom properties in themes
+
+:root {
+  --topic-body-width: #{$topic-body-width};
+  --topic-body-width-padding: #{$topic-body-width-padding};
+  --topic-avatar-width: #{$topic-avatar-width};
+  --d-border-radius: initial;
+  --d-border-radius-large: initial;
+  --d-nav-pill-border-radius: var(--d-border-radius);
+  --d-button-border-radius: var(--d-border-radius);
+  --d-input-border-radius: var(--d-border-radius);
+  --d-content-background: initial;
+  --d-font-family--monospace: Consolas, Menlo, Monaco, "Lucida Console",
+    "Liberation Mono", "DejaVu Sans Mono", "Bitstream Vera Sans Mono",
+    "Courier New", monospace;
+}
 
 // --------------------------------------------------
 // Base styles for HTML elements
 // --------------------------------------------------
 
 html {
-  color: $primary;
-  font-family: $base-font-family;
-  font-size: $base-font-size;
-  line-height: $line-height-large;
-  background-color: $secondary;
+  color: var(--primary);
+  font-family: var(--font-family);
+  font-size: var(--base-font-size);
+  line-height: var(--line-height-large);
+  background-color: var(--secondary);
   overflow-y: scroll;
   direction: ltr;
 
+  &.text-size-smallest {
+    font-size: var(--base-font-size-smallest);
+  }
+
   &.text-size-smaller {
-    font-size: $base-font-size-smaller;
+    font-size: var(--base-font-size-smaller);
   }
 
   &.text-size-larger {
-    font-size: $base-font-size-larger;
+    font-size: var(--base-font-size-larger);
   }
 
   &.text-size-largest {
-    font-size: $base-font-size-largest;
+    font-size: var(--base-font-size-largest);
   }
 }
 
@@ -31,17 +51,17 @@ html {
 // --------------------------------------------------
 
 a {
-  color: $tertiary;
+  color: var(--tertiary);
   text-decoration: none;
   cursor: pointer;
   &:visited {
-    color: $tertiary;
+    color: var(--tertiary);
   }
   &:hover {
-    color: $tertiary;
+    color: var(--tertiary);
   }
   &:active {
-    color: $tertiary;
+    color: var(--tertiary);
   }
 }
 
@@ -53,7 +73,7 @@ hr {
   height: 1px;
   margin: 1em 0;
   border: 0;
-  border-top: 1px solid $primary-low;
+  border-top: 1px solid var(--primary-low);
   padding: 0;
 }
 
@@ -61,8 +81,9 @@ hr {
 // --------------------------------------------------
 
 ul,
+ol,
 dd {
-  margin: 0 0 9px 25px;
+  margin: 1em 0 1em 1.25em;
   padding: 0;
 }
 
@@ -72,16 +93,20 @@ dd {
   clear: both;
 }
 
-.cooked ul,
-.d-editor-preview ul {
-  margin: 0;
-  padding-left: 40px;
+.cooked,
+.d-editor-preview {
+  ul,
+  ol {
+    padding-left: 1.25em;
+  }
 }
 
-li {
+li,
+.cooked li,
+.d-editor-preview li {
   > ul,
   > ol {
-    margin-bottom: 0;
+    margin: 0;
   }
 }
 
@@ -90,6 +115,10 @@ li {
 
 img {
   vertical-align: middle;
+}
+
+.svg-icon {
+  color: inherit;
 }
 
 // Forms
@@ -103,38 +132,78 @@ fieldset {
 
 pre code {
   overflow: auto;
+  -moz-tab-size: 4;
   tab-size: 4;
-}
-
-// TODO figure out a clean place to put stuff like this
-.row:before,
-.row:after {
-  display: table;
-  content: "";
-}
-.row:after {
-  clear: both;
-}
-
-#offscreen-content {
-  display: none;
+  &.lang-markdown {
+    white-space: pre-wrap;
+  }
 }
 
 // Tables
 // --------------------------------------------------
 
-tbody {
-  border-top: 3px solid $primary-low;
+table {
+  border-collapse: collapse;
 }
 
+tbody {
+  border-top: 3px solid var(--primary-low);
+}
+
+.topic-list-item,
 tr {
-  border-bottom: 1px solid $primary-low;
-  &.highlighted {
-    animation: background-fade-highlight 2.5s ease-out;
+  border-bottom: 1px solid var(--primary-low);
+  @media (prefers-reduced-motion: no-preference) {
+    &.highlighted {
+      animation: background-fade-highlight 2.5s ease-out;
+    }
   }
 }
 
 // https://en.wikipedia.org/wiki/Ruby_character
 ruby > rt {
   font-size: 72%; // ~10px with 14px base
+}
+
+// Buttons (was in normalized)
+// --------------------------------------------------
+
+button,
+html input[type="button"],
+input[type="reset"],
+input[type="submit"] {
+  cursor: pointer;
+}
+
+// Inline form
+// --------------------------------------------------
+
+.inline-form {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  &.full-width {
+    display: flex;
+  }
+
+  > input[type="text"],
+  > input[type="search"],
+  > input[type="password"] {
+    display: inline-flex;
+    flex: 1;
+  }
+
+  > .select-kit,
+  > input[type="text"],
+  > input[type="search"],
+  > input[type="password"],
+  > label,
+  > .btn,
+  > .d-date-input {
+    margin-bottom: 0.5em; // for when items wrap (mobile, narrow windows)
+    margin-right: 0.5em;
+    &:last-child {
+      margin-right: 0;
+    }
+  }
 }

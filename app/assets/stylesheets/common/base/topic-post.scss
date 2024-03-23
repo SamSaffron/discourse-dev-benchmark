@@ -1,7 +1,11 @@
+#main-outlet > .regular {
+  background: var(--d-content-background);
+}
+
 .button-count.has-pending {
   span {
-    background-color: $danger;
-    color: $secondary;
+    background-color: var(--danger);
+    color: var(--secondary);
     border-radius: 10px;
     padding: 0.25em 0.5em;
     display: inline-block;
@@ -17,15 +21,17 @@
   position: relative;
   overflow: hidden;
   &:before {
-    animation: placeHolderShimmer 4s linear infinite forwards;
+    @media (prefers-reduced-motion: no-preference) {
+      animation: placeHolderShimmer 4s linear infinite forwards;
+    }
     position: absolute;
     left: 0;
     content: "";
     background: linear-gradient(
       to right,
-      $primary-very-low 10%,
-      $primary-low 28%,
-      $primary-very-low 43%
+      var(--primary-very-low) 10%,
+      var(--primary-low) 28%,
+      var(--primary-very-low) 43%
     );
     height: 45px;
     width: 700px;
@@ -33,11 +39,15 @@
 }
 
 .placeholder-text {
-  margin-left: 11px;
+  margin-left: var(--topic-body-width-padding);
   display: inline-block;
-  width: calc(100% - 11px);
+  width: calc(100% - var(--topic-body-width-padding));
   height: 1.5em;
   margin-bottom: 0.6em;
+}
+
+.post-stream .placeholder .row {
+  display: flex;
 }
 
 .names {
@@ -50,18 +60,19 @@
   }
 
   span {
-    font-size: $font-0;
+    font-size: var(--font-0);
     margin-right: 8px;
     display: inline-block;
     @include ellipsis;
     vertical-align: middle;
     a {
-      color: dark-light-choose($primary-high, $secondary-low);
+      color: var(--primary-high-or-secondary-low);
+      outline-offset: -1px;
     }
   }
   .fa {
-    font-size: $font-down-1;
-    color: dark-light-choose($primary-medium, $secondary-medium);
+    font-size: var(--font-down-1);
+    color: var(--primary-med-or-secondary-med);
   }
   .svg-icon-title {
     margin-left: 3px;
@@ -70,7 +81,7 @@
   .new_user a,
   .user-title,
   .user-title a {
-    color: dark-light-choose($primary-medium, $secondary-medium);
+    color: var(--primary-med-or-secondary-med);
   }
 }
 
@@ -78,7 +89,12 @@
 .cooked,
 .d-editor-preview {
   word-wrap: break-word;
-  line-height: $line-height-large;
+  line-height: var(--line-height-large);
+
+  > *:first-child {
+    margin-top: 0;
+  }
+
   h1,
   h2,
   h3,
@@ -86,47 +102,72 @@
   h5,
   h6 {
     margin: 30px 0 10px;
-    line-height: $line-height-medium;
+    line-height: var(--line-height-medium);
+    a.anchor {
+      opacity: 0;
+      transition: opacity 0.25s;
+      &:before {
+        content: svg-uri(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" viewBox="0 0 512 512" fill="#{$primary-medium}"><path d="M326.612 185.391c59.747 59.809 58.927 155.698.36 214.59-.11.12-.24.25-.36.37l-67.2 67.2c-59.27 59.27-155.699 59.262-214.96 0-59.27-59.26-59.27-155.7 0-214.96l37.106-37.106c9.84-9.84 26.786-3.3 27.294 10.606.648 17.722 3.826 35.527 9.69 52.721 1.986 5.822.567 12.262-3.783 16.612l-13.087 13.087c-28.026 28.026-28.905 73.66-1.155 101.96 28.024 28.579 74.086 28.749 102.325.51l67.2-67.19c28.191-28.191 28.073-73.757 0-101.83-3.701-3.694-7.429-6.564-10.341-8.569a16.037 16.037 0 0 1-6.947-12.606c-.396-10.567 3.348-21.456 11.698-29.806l21.054-21.055c5.521-5.521 14.182-6.199 20.584-1.731a152.482 152.482 0 0 1 20.522 17.197zM467.547 44.449c-59.261-59.262-155.69-59.27-214.96 0l-67.2 67.2c-.12.12-.25.25-.36.37-58.566 58.892-59.387 154.781.36 214.59a152.454 152.454 0 0 0 20.521 17.196c6.402 4.468 15.064 3.789 20.584-1.731l21.054-21.055c8.35-8.35 12.094-19.239 11.698-29.806a16.037 16.037 0 0 0-6.947-12.606c-2.912-2.005-6.64-4.875-10.341-8.569-28.073-28.073-28.191-73.639 0-101.83l67.2-67.19c28.239-28.239 74.3-28.069 102.325.51 27.75 28.3 26.872 73.934-1.155 101.96l-13.087 13.087c-4.35 4.35-5.769 10.79-3.783 16.612 5.864 17.194 9.042 34.999 9.69 52.721.509 13.906 17.454 20.446 27.294 10.606l37.106-37.106c59.271-59.259 59.271-155.699.001-214.959z"></path></svg>'
+        );
+        line-height: 1.4;
+        margin-left: -20px;
+        padding-right: 4px;
+        position: absolute;
+        z-index: 2;
+      }
+    }
+
+    // show when hovering where icon should be
+    // show when hovering header
+    .discourse-no-touch & a.anchor:hover,
+    .discourse-no-touch &:hover a.anchor {
+      opacity: 1;
+    }
   }
 
   h1 {
-    font-size: $font-up-3;
+    font-size: var(--font-up-3-rem);
   }
 
   h2 {
-    font-size: $font-up-2;
+    font-size: var(--font-up-2-rem);
   }
 
   h3 {
-    font-size: $font-up-1;
+    font-size: var(--font-up-1-rem);
   }
 
   h4 {
-    font-size: $font-0;
+    font-size: var(--font-0-rem);
   }
 
   h5 {
-    font-size: $font-down-1;
+    font-size: var(--font-down-1-rem);
   }
 
   h6 {
-    font-size: $font-down-2;
+    font-size: var(--font-down-2-rem);
   }
 
   a {
     word-wrap: break-word;
   }
+
+  mark {
+    text-decoration: none;
+  }
+
   ins {
-    background-color: dark-light-choose(
-      $success-low,
-      scale-color($success, $lightness: -60%)
-    );
+    background-color: var(--success-low);
+    text-decoration: underline;
   }
   del {
-    background-color: dark-light-choose(
-      $danger-low,
-      scale-color($danger, $lightness: -60%)
-    );
+    background-color: var(--danger-low);
+    text-decoration: line-through;
+  }
+  mark {
+    background-color: var(--highlight);
   }
   // Prevents users from breaking posts with tag nesting
   big {
@@ -157,23 +198,33 @@
   sup sup {
     top: 0;
   }
+
+  img:not(.thumbnail):not(.ytp-thumbnail-image):not(.emoji) {
+    max-width: 100%;
+    height: auto;
+    display: inline-block; // Ensure dimensions are maintained even after load error
+
+    @supports not (aspect-ratio: 1) {
+      // (see javascripts/discourse/app/initializers/image-aspect-ratio.js)
+      height: var(--calculated-height);
+    }
+  }
+
+  svg {
+    max-height: 2000px;
+  }
 }
 
 // add staff color
 .moderator {
   .regular > .cooked {
-    background-color: dark-light-choose($highlight-low, $highlight-medium);
-    padding: 10px;
-    img:not(.thumbnail) {
-      max-width: 100%;
-      height: auto;
-    }
+    background-color: var(--highlight-bg);
   }
   .clearfix > .topic-meta-data > .names {
     span.user-title {
-      color: dark-light-choose($primary-high, $secondary-low);
+      color: var(--primary-high-or-secondary-low);
       a {
-        background-color: dark-light-choose($highlight-low, $highlight-medium);
+        background-color: var(--highlight-bg);
         padding-left: 4px;
         padding-right: 4px;
       }
@@ -194,6 +245,225 @@
     flex: 0 0 auto;
     align-items: center;
   }
+
+  .user-status-message {
+    display: flex;
+    img.emoji {
+      width: 1em;
+      height: 1em;
+    }
+  }
+}
+
+nav.post-controls {
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--primary-low-mid);
+
+  .actions {
+    display: inline-flex;
+    text-align: right;
+    margin-left: auto;
+
+    // Some buttons can be doubled up, like likes or flags
+    .double-button {
+      display: inline-flex;
+      flex: 0 1 auto;
+      align-items: center;
+      white-space: nowrap;
+      button {
+        // It looks really confusing when one half a double button has an inner shadow on click.
+        &:active {
+          box-shadow: none;
+        }
+        &.my-likes,
+        &.read-indicator,
+        &.regular-likes {
+          // Like count on posts
+          .d-icon {
+            color: var(--primary-low-mid);
+            padding-left: 0.45em;
+          }
+        }
+        &.has-like {
+          // Like button after I've liked
+          .d-icon {
+            color: var(--love);
+          }
+        }
+        &[disabled] {
+          // Disabled like button
+          cursor: not-allowed;
+        }
+        &.button-count {
+          // Like count button
+          height: 100%; // sometimes the font might be shorter than the icon
+          &:not(.my-likes) {
+            padding-right: 0;
+          }
+          + .toggle-like {
+            // Like button when like count is present
+            padding-left: 0.45em;
+          }
+        }
+      }
+    }
+    a,
+    button {
+      color: var(--primary-low-mid-or-secondary-high);
+      .d-icon {
+        opacity: 1;
+      }
+      display: inline-block;
+    }
+
+    button {
+      flex: 0 1 auto;
+      font-size: var(--font-up-1);
+      padding: 8px 10px;
+      vertical-align: top;
+      background: transparent;
+      border: none;
+      .d-icon {
+        // this avoids an issue where hovering off the icon
+        // removes the .d-hover class from the button prematurely
+        pointer-events: none;
+      }
+      &.d-hover,
+      &:focus,
+      &:active {
+        outline: none;
+        background: var(--primary-low);
+        color: var(--primary);
+      }
+      &.hidden {
+        display: none;
+      }
+      &.admin {
+        position: relative;
+      }
+      &.delete.d-hover,
+      &.delete:active,
+      &.delete:focus {
+        background: var(--danger);
+        color: var(--secondary);
+        .d-icon {
+          color: var(--secondary);
+        }
+      }
+      &.bookmarked .d-icon {
+        color: var(--tertiary);
+      }
+      &.create {
+        margin-right: 0;
+        color: var(--primary-high-or-secondary-low);
+        .d-icon {
+          color: var(--primary-high-or-secondary-low);
+        }
+      }
+    }
+  }
+
+  .show-replies {
+    font-size: var(--font-up-1);
+    font-size: inherit;
+    padding: 10px;
+    color: var(--primary-medium);
+    &:hover,
+    &:focus {
+      outline: none;
+      color: var(--primary);
+      background: var(--primary-low);
+    }
+    .d-icon {
+      font-size: var(--font-down-1);
+    }
+    .d-button-label + .d-icon {
+      margin-left: 0.45em;
+      margin-right: 0;
+    }
+  }
+}
+
+.deleted {
+  .regular > .cooked {
+    background-color: var(--danger-low-mid);
+  }
+  .topic-meta-data:not(.embedded-reply) {
+    color: var(--danger);
+
+    .post-info a,
+    a {
+      color: currentColor;
+    }
+
+    .d-icon {
+      color: currentColor;
+    }
+  }
+  nav.post-controls {
+    color: var(--danger);
+
+    .show-replies,
+    button.reply.create {
+      color: var(--danger);
+      .d-icon {
+        color: var(--danger);
+      }
+    }
+    .widget-button {
+      &:hover {
+        color: currentColor;
+        background: var(--danger-low);
+        .d-icon {
+          color: currentColor;
+        }
+      }
+      &[disabled]:hover {
+        background-color: transparent;
+        cursor: not-allowed;
+      }
+      &.fade-out {
+        opacity: 1;
+      }
+    }
+    .d-icon {
+      color: var(--danger);
+    }
+  }
+  .post-action {
+    color: var(--danger);
+  }
+}
+
+@keyframes heartBump {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.5);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.has-like .d-icon.heart-animation {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: heartBump 0.4s;
+  }
+}
+
+@keyframes slideout {
+  from {
+    max-height: 60px;
+  }
+
+  to {
+    max-height: 9999px;
+  }
 }
 
 // we use aside to hold expandable quotes (versus, say, static blockquotes)
@@ -201,14 +471,10 @@ aside.quote {
   margin-top: 1em;
   margin-bottom: 1em;
 
-  .badge-wrapper {
-    margin-left: 5px;
-  }
-
   .title {
     @include post-aside;
 
-    color: dark-light-choose($primary-high, $secondary-low);
+    color: var(--primary-high-or-secondary-low);
     padding: 12px 12px 0px 12px;
     // blockquote is underneath this and has top margin
     .avatar {
@@ -223,25 +489,35 @@ aside.quote {
   // blockquote is docked within aside for content
   blockquote {
     margin-top: 0;
-  }
-}
-
-blockquote {
-  // due to #image-sizing-hack large images and lightboxes extend past the
-  // limits blockquotes. Since #image-sizing-hack is inline, we need to use
-  // !important here otherwise it won't work.
-  img {
-    max-width: 100% !important;
+    .expanded-quote {
+      overflow: hidden;
+      @media (prefers-reduced-motion: no-preference) {
+        animation: slideout 1s ease-in-out;
+      }
+      &.icon-only {
+        text-align: center;
+        font-size: var(--font-up-4);
+        padding-top: 0.5em;
+        padding-bottom: 0.5em;
+        color: var(--primary-medium);
+      }
+    }
   }
 }
 
 .quote-controls,
 .quote-controls .d-icon {
-  color: dark-light-choose($primary-low-mid, $secondary-high);
+  color: var(--primary-low-mid-or-secondary-high);
+}
+
+.quote-controls {
+  .quote-toggle {
+    padding: 0;
+  }
 }
 
 .cooked .highlight {
-  background-color: $tertiary-low;
+  background-color: var(--tertiary-low);
   padding: 2px;
   margin: -2px;
 }
@@ -251,11 +527,21 @@ blockquote {
 }
 
 .post-action {
-  color: $primary-medium;
+  color: var(--primary-medium);
   .undo-action,
   .act-action {
     margin-left: 5px;
   }
+}
+
+.small-user-list .unknown {
+  display: inline-block;
+  background-color: var(--primary-low);
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 0.25em;
 }
 
 .post-hidden {
@@ -281,98 +567,210 @@ blockquote {
 }
 
 .quote-button {
-  display: none;
-  position: absolute;
-  background-color: blend-primary-secondary(50%);
-  color: dark-light-choose($secondary, $primary);
-  padding: 10px;
-  z-index: z("dropdown");
-  opacity: 0.9;
+  flex-direction: column;
 
-  .d-icon {
-    display: inline-block;
+  &.visible {
+    display: flex;
   }
 
-  &:hover {
-    background-color: $primary-medium;
-    cursor: pointer;
+  .buttons {
+    display: flex;
+  }
+
+  .extra {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .fast-edit-container {
+    display: flex;
+    padding: 0.5em;
+    padding-top: 0;
+    flex-direction: column;
+    align-items: flex-start;
+
+    #fast-edit-input {
+      margin: 0;
+      width: 300px;
+      height: 90px;
+    }
+
+    .save-fast-edit {
+      margin-top: 0.5em;
+    }
+  }
+
+  .insert-quote + .quote-sharing {
+    border-left: 1px solid rgba(255, 255, 255, 0.3);
+  }
+
+  .btn-flat {
+    &:hover {
+      .d-icon {
+        color: var(--tertiary);
+      }
+    }
+
+    .d-button-label {
+      white-space: nowrap;
+    }
+  }
+
+  .quote-sharing {
+    vertical-align: middle;
+    display: inline-flex;
+    align-items: center;
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .quote-share-label {
+      opacity: 1;
+      transition: opacity 0.3s ease-in-out;
+    }
+
+    &:hover {
+      .quote-share-label {
+        background: transparent;
+        opacity: 0;
+        max-width: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      .quote-share-label + .quote-share-buttons {
+        max-width: 10em;
+        opacity: 1;
+        transition: opacity 0.3s ease-in-out;
+      }
+      // this pseudo element creates a transition buffer zone
+      // without it, the width change on hover can cause transition jitter
+      // the width is roughly wide enough to cover long translations of "share"
+      &:after {
+        content: "";
+        position: absolute;
+        display: block;
+        background: transparent;
+        height: 100%;
+        padding: 0.5em 4em;
+        z-index: -1; // below the buttons
+      }
+    }
+
+    .quote-share-label + .quote-share-buttons {
+      opacity: 0;
+      overflow: hidden;
+      max-width: 0;
+      display: inline-flex;
+      transition: opacity 0.3s ease-in-out;
+    }
   }
 }
 
+.post-avatar,
 .topic-avatar,
 .user-card-avatar {
   position: relative;
 }
 
 .topic-map {
-  background: $primary-very-low;
-  border: 1px solid $primary-low;
+  background: var(--primary-very-low);
+  border: 1px solid var(--primary-low);
   border-top: none; // would cause double top border
 
   .avatars {
-    > div {
-      float: left;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    box-sizing: border-box;
+    a {
+      display: block;
       position: relative;
-      margin: 3px 0;
+    }
+
+    .avatar {
+      width: 2.15em;
+      height: 2.15em;
     }
     .post-count {
       position: absolute;
+      top: 0;
       right: 0;
       border-radius: 100px;
-      padding: 3px 5px;
+      padding: 0.15em 0.4em 0.2em;
       text-align: center;
       font-weight: normal;
-      font-size: $font-down-2;
-      line-height: $line-height-small;
+      font-size: var(--font-down-2);
+      line-height: var(--line-height-small);
     }
   }
 
   .avatar {
-    float: left;
-    margin-right: 4px;
+    margin-right: 0.33em;
   }
 
   section {
-    border-top: 1px solid $primary-low;
+    border-top: 1px solid var(--primary-low);
   }
 
   ul {
+    display: flex;
+    flex-wrap: wrap;
     margin: 0;
     list-style: none;
   }
 
   h3 {
-    margin-bottom: 4px;
-    color: $primary;
-    line-height: $line-height-large;
+    width: 100%;
+    margin-bottom: 0.33em;
+    color: var(--primary);
+    line-height: var(--line-height-large);
     font-weight: normal;
-    font-size: $font-0;
+    font-size: var(--font-0);
   }
 
   h4 {
     margin: 1px 0 2px 0;
-    color: dark-light-choose($primary-medium, $secondary-medium);
+    color: var(--primary-med-or-secondary-med);
     font-weight: normal;
-    font-size: $font-down-1;
-    line-height: $line-height-small;
+    font-size: var(--font-down-1);
+    line-height: var(--line-height-small);
   }
 
   span.domain {
-    font-size: $font-down-2;
-    color: dark-light-choose($primary-medium, $secondary-medium);
+    font-size: var(--font-down-2);
+    color: var(--primary-med-or-secondary-med);
   }
 
   td {
     vertical-align: top;
     padding: 1px;
+    word-break: break-all;
   }
 
   .topic-links {
+    tbody {
+      border: none;
+    }
     tr {
       border: none;
     }
     .badge-notification {
       margin: 1px 5px 2px 0;
+    }
+  }
+
+  .link-summary .btn {
+    width: 100%;
+    .d-icon {
+      color: var(--primary-high);
+    }
+    .discourse-no-touch & {
+      &:hover {
+        background: var(--primary-low);
+      }
     }
   }
 
@@ -406,7 +804,7 @@ blockquote {
     }
 
     .user {
-      border: 1px solid $primary-low;
+      border: 1px solid var(--primary-low);
       border-radius: 0.25em;
       padding: 0;
       margin: 0.125em 0.25em 0.125em 0;
@@ -416,10 +814,10 @@ blockquote {
 
       .user-link,
       .group-link {
-        color: $primary-high;
+        color: var(--primary-high);
 
         &:hover {
-          color: $primary;
+          color: var(--primary);
         }
       }
 
@@ -444,10 +842,11 @@ blockquote {
         align-items: center;
         justify-content: center;
         box-sizing: border-box;
-        border-radius: 0 0.25em 0.25em 0;
+        border-radius: 0 var(--border-radius) var(--border-radius) 0;
         padding-top: 0;
         padding-bottom: 0;
-        height: 100%;
+        height: calc(100% + 0.25em);
+        margin-right: -4px;
       }
     }
   }
@@ -464,7 +863,8 @@ blockquote {
 .user-card-avatar,
 .topic-map .poster,
 .user-profile-avatar,
-.user-image {
+.user-image,
+.latest-topic-list-item {
   .avatar-flair {
     display: flex;
     align-items: center;
@@ -479,7 +879,8 @@ blockquote {
 .topic-avatar .avatar-flair,
 .avatar-flair-preview .avatar-flair,
 .collapsed-info .user-profile-avatar .avatar-flair,
-.user-image .avatar-flair {
+.user-image .avatar-flair,
+.latest-topic-list-item .avatar-flair {
   background-size: 20px 20px;
   width: 20px;
   height: 20px;
@@ -506,7 +907,7 @@ blockquote {
     right: -4px;
   }
   .fa {
-    font-size: $font-up-4;
+    font-size: var(--font-up-4);
   }
 }
 .topic-map .poster .avatar-flair {
@@ -515,7 +916,7 @@ blockquote {
   width: 16px;
   height: 16px;
   bottom: -3px;
-  color: $primary;
+  color: var(--primary);
   &.rounded {
     background-size: 12px 12px;
     border-radius: 8px;
@@ -525,11 +926,8 @@ blockquote {
     right: 0;
   }
   .d-icon {
-    font-size: $font-down-2;
+    font-size: var(--font-down-2);
   }
-}
-.topic-avatar .poster-avatar-extra {
-  display: none;
 }
 
 .map {
@@ -551,9 +949,32 @@ blockquote {
   // a deeply nested blockquote, and so on.. you get the idea.
   .cooked {
     overflow: hidden;
+
+    .button-wrapper {
+      display: none;
+    }
   }
-  &.highlighted {
+  .group-request {
+    border-top: 1px solid var(--primary-low);
+    padding-top: 0.5em;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .topic-body.highlighted,
+  .small-action-desc.highlighted {
     animation: background-fade-highlight 2.5s ease-out;
+  }
+  // Disable animation so deleted status is visible immediately
+  .deleted .topic-body.highlighted {
+    animation: none;
+  }
+}
+
+.small-action-desc,
+.topic-body {
+  &:focus-visible {
+    outline: none;
   }
 }
 
@@ -568,49 +989,122 @@ blockquote {
   &.whisper,
   &.post-locked {
     .d-icon {
-      font-size: $font-0;
+      font-size: var(--font-0);
     }
   }
 
   .wiki,
   .last-wiki-edit {
-    color: $wiki;
+    color: var(--wiki);
   }
 
   &.via-email {
-    color: dark-light-choose($primary-low-mid, $secondary-high);
+    color: var(--primary-low-mid-or-secondary-high);
   }
   &.raw-email {
     cursor: pointer;
   }
+  &.edits {
+    .widget-button {
+      display: flex;
+      align-items: center;
+      .d-button-label {
+        order: 0;
+        padding-right: 0.25em;
+        color: var(--primary-med-or-secondary-med);
+      }
+      .d-icon {
+        order: 1;
+        color: var(--primary-med-or-secondary-med);
+      }
+      .discourse-no-touch & {
+        &:hover {
+          .d-button-label {
+            color: var(--primary-high);
+          }
+          .d-icon {
+            color: var(--primary-high);
+          }
+        }
+      }
+      &:focus {
+        @include default-focus;
+        background: transparent;
+      }
+    }
+  }
 }
 
 pre {
+  max-height: 2000px;
   code {
     word-wrap: normal;
     display: block;
     padding: 0.5em;
-    color: $primary;
-    background: blend-primary-secondary(5%);
+    color: var(--primary);
+    background: var(--blend-primary-secondary-5);
     max-height: 500px;
+  }
+
+  .bidi-warning,
+  .bidi-warning span {
+    font-style: normal;
+    background-color: var(--highlight);
+    color: var(--danger);
+    cursor: help;
+  }
+}
+
+.codeblock-buttons {
+  display: block;
+  position: relative;
+  overflow: visible;
+
+  .codeblock-button-wrapper {
+    position: absolute;
+    display: flex;
+  }
+
+  .copy-cmd,
+  .fullscreen-cmd {
+    @include unselectable;
+    top: 0;
+    min-height: 0;
+    font-size: var(--font-down-2);
+    min-height: 0;
+    font-size: var(--font-down-2);
+    opacity: 0.7;
+    cursor: pointer;
+
+    &.action-complete {
+      cursor: auto;
+      .d-icon {
+        color: var(--tertiary);
+      }
+    }
+
+    .d-icon {
+      pointer-events: none;
+      margin-right: 0;
+    }
   }
 }
 
 kbd {
-  background-color: $secondary;
-  border: 1px solid $primary-low;
+  align-items: center;
+  border: 1px solid var(--primary-low-mid);
+  background: var(--primary-very-low);
+  border-bottom-width: 2px;
   border-radius: 3px;
-  box-shadow: shadow("kbd");
-  background: dark-light-choose(#fafafa, #333);
-  border: 1px solid dark-light-choose(#ccc, #555);
-  border-bottom: medium none dark-light-choose(#fff, #000);
-
-  color: $primary;
-  display: inline-block;
-  font-size: $font-down-1;
-  line-height: $line-height-large;
-  margin: 0 0.1em;
-  padding: 0.1em 0.6em;
+  box-sizing: border-box;
+  display: inline-flex;
+  gap: 0 0.5em; // space between text and images/emoji
+  font-size: var(--font-down-1);
+  justify-content: center;
+  line-height: var(--line-height-large);
+  margin: 0 0.15em;
+  min-width: 24px;
+  padding: 0.15em 0.6em;
 
   // don't allow more than 3 nested elements to prevent FF from crashing
   // cf. http://what.thedailywtf.com/t/nested-elements/7927
@@ -631,12 +1125,13 @@ blockquote > *:last-child {
 }
 
 .gap {
-  padding: 0.25em 0 0.5em 56px; // 45px (topic avatar) + 11px (margin) = 56px
-  color: dark-light-choose($primary-medium, $secondary-high);
+  padding: 0.25em 0 0.5em
+    calc(var(--topic-avatar-width) + var(--topic-body-width-padding));
+  color: var(--primary-med-or-secondary-high);
   cursor: pointer;
   text-transform: uppercase;
   font-weight: bold;
-  font-size: $font-down-1;
+  font-size: var(--font-down-1);
 }
 
 .who-liked,
@@ -648,6 +1143,7 @@ blockquote > *:last-child {
   }
 }
 
+.reviewable .post-body,
 .cooked table,
 .d-editor-preview table {
   thead {
@@ -655,7 +1151,7 @@ blockquote > *:last-child {
       text-align: left;
       padding-bottom: 2px;
       font-weight: bold;
-      color: $primary;
+      color: var(--primary);
     }
   }
 
@@ -667,81 +1163,113 @@ blockquote > *:last-child {
 .small-action {
   display: flex;
   align-items: center;
-  max-width: 758px;
-  border-top: 1px solid $primary-low;
+
+  &:focus-visible {
+    outline: none;
+  }
+
+  &.deleted {
+    background-color: var(--danger-low-mid);
+  }
+
+  .topic-avatar,
+  .small-action-desc {
+    border-top: 1px solid var(--primary-low);
+  }
+
   .topic-avatar {
-    align-self: flex-start;
-    padding: 0.7em 0;
-    border-top: none;
-    margin-right: 11px;
+    display: flex;
+    align-self: stretch;
     flex: 0 0 auto;
+    margin: 0;
+    padding-top: 1em;
+    width: var(--topic-avatar-width);
+    justify-content: center;
     .d-icon {
-      font-size: 2em;
-      width: 45px;
-      text-align: center;
-      color: $primary-low-mid;
+      font-size: var(--font-up-3);
+      width: var(--topic-avatar-width);
+      color: var(--primary-low-mid);
     }
-  }
-
-  .small-action.deleted {
-    background-color: dark-light-diff(
-      rgba($danger, 0.7),
-      $secondary,
-      50%,
-      -60%
-    );
-  }
-
-  .small-action-desc.timegap {
-    color: $primary-medium;
   }
 
   .small-action-desc {
+    box-sizing: border-box;
     display: flex;
     flex-wrap: wrap;
-    flex: 1 1 100%;
-    align-items: center;
-    padding: 1em 0;
-    text-transform: uppercase;
-    font-weight: bold;
-    font-size: $font-down-1;
-    color: $primary-medium;
+    color: var(--primary-700);
+    padding: 1em 0 1em var(--topic-body-width-padding);
+    width: calc(
+      var(--topic-body-width) + (var(--topic-body-width-padding) * 2)
+    );
     min-width: 0; // Allows flex container to shrink
 
-    .custom-message {
-      flex: 1 1 100%;
-      text-transform: none;
-      font-weight: normal;
-      font-size: $font-up-1;
-      order: 12;
-      word-break: break-word;
-      min-width: 0; // Allows content like oneboxes to shrink
-      p {
-        margin-bottom: 0;
-      }
-    }
-    a.trigger-user-card {
-      align-self: stretch;
-    }
     .avatar {
-      margin-right: 0.8em;
+      margin-right: 0.5em;
       float: left;
     }
 
-    > p {
+    p {
       margin: 0;
-      line-height: $line-height-medium;
-      flex: 1 1;
+      padding: 0.15em 0.5em 0 0;
+    }
+  }
+
+  .small-action-contents {
+    flex: 1 1 auto;
+  }
+
+  .small-action-buttons {
+    margin-left: auto;
+  }
+
+  .small-action-custom-message {
+    flex: 1 1 100%;
+    font-weight: normal;
+    margin-top: 0.5em;
+    word-break: break-word;
+    min-width: 0; // Allows content like oneboxes to shrink
+    color: var(--primary);
+    p {
+      margin-bottom: 0;
     }
   }
 
   button {
     background: transparent;
-    border: 0;
-    order: 9;
-    &:last-of-type {
-      margin-left: auto;
-      order: 8;
+    font-size: var(--font-down-1);
+    .d-icon {
+      color: var(--primary-500);
+    }
+
+    .discourse-no-touch & {
+      &:hover,
+      &:focus {
+        background: var(--primary-200);
+        .d-icon {
+          color: var(--primary);
+        }
+      }
+    }
+  }
+
+  &.topic-post-visited {
+    .topic-post-visited-line {
+      text-align: center;
+      border-bottom: 1px solid var(--danger-medium);
+      z-index: z("base") + 2; // ensures last visit border is on top of post borders
+      line-height: 0;
+      margin: 0;
+      margin-bottom: -1px;
+      color: var(--danger-medium);
+      font-size: var(--font-down-1);
+      width: calc(
+        var(--topic-body-width) + var(--topic-avatar-width) +
+          (var(--topic-body-width-padding) * 2)
+      );
+      .topic-post-visited-message {
+        background-color: var(--secondary);
+        padding: 0 0.5em;
+      }
     }
   }
 }
@@ -753,55 +1281,31 @@ blockquote > *:last-child {
   .topic-body {
     .cooked {
       font-style: italic;
-      color: $primary-medium;
+      color: var(--primary-medium);
     }
   }
 }
 
-a.mention {
-  font-weight: bold;
-  font-size: 0.93em;
-  color: $primary;
-  color: dark-light-choose($primary-high, $secondary-low);
-  padding: 2px 4px;
-  background: $primary-low;
-  border-radius: 8px;
+a.mention,
+a.mention-group {
+  // linked
+  @include mention;
+}
+
+.mention .emoji {
+  margin-left: 0.3em;
+  width: 15px;
+  height: 15px;
 }
 
 span.mention {
-  font-weight: bold;
-  font-size: 0.93em;
-  color: $primary;
-}
-
-a.mention-group {
-  font-weight: bold;
-  font-size: 0.93em;
-  color: $primary;
-
-  &.notify,
-  .small-action-desc & {
-    color: dark-light-choose($primary-high, $secondary-low);
-    padding: 2px 4px;
-    background: $primary-low;
-    border-radius: 8px;
-  }
-}
-
-.popup-menu {
-  h3 {
-    margin-top: 0;
-  }
+  // unlinked, invalid mention
+  color: var(--primary-high);
 }
 
 .suggested-topics {
   .topics {
     padding-bottom: 15px;
-  }
-  .suggested-topics-message {
-    .badge-wrapper {
-      margin-right: 0;
-    }
   }
 }
 
@@ -817,10 +1321,10 @@ a.mention-group {
     }
 
     > .d-icon {
-      color: dark-light-choose($primary-medium, $secondary-medium);
+      color: var(--primary-med-or-secondary-med);
       margin-right: 6px;
-      font-size: $font-0;
-      line-height: $line-height-large;
+      font-size: var(--font-0);
+      line-height: var(--line-height-large);
     }
 
     > span.url {
@@ -833,10 +1337,10 @@ a.mention-group {
 
     > span.help {
       display: inline-block;
-      color: dark-light-choose($primary-medium, $secondary-medium);
-      font-size: $font-down-1;
+      color: var(--primary-med-or-secondary-med);
+      font-size: var(--font-down-1);
       font-style: italic;
-      line-height: $line-height-large;
+      line-height: var(--line-height-large);
       margin-bottom: 1px;
     }
 
@@ -846,13 +1350,25 @@ a.mention-group {
   }
 }
 
-.broken-image {
-  color: dark-light-choose($primary-low-mid, $secondary-high);
-  border: 1px solid $primary-low;
-  font-size: $font-up-5;
+.broken-image,
+.blocked-hotlinked-placeholder {
+  &:not(a) {
+    color: var(--primary-low-mid-or-secondary-high);
+  }
+
+  display: inline-flex;
+  flex-direction: column;
+  border: 1px solid var(--primary-low);
+  align-items: center;
+  justify-content: center;
 
   .d-icon {
     margin: 16px;
+    font-size: var(--font-up-5);
+  }
+
+  .notice {
+    margin: 0 0.5em 0.5em 0.5em;
   }
 }
 
@@ -862,6 +1378,8 @@ a.mention-group {
   display: flex;
   align-items: center;
   margin-right: 2em;
+  max-width: 400px;
+  overflow: hidden;
 
   img {
     margin: 0 0.25em;
@@ -875,9 +1393,9 @@ a.mention-group {
     article.boxed {
       .select-posts {
         button.select-post {
-          background-color: $tertiary;
-          color: $secondary;
-          border-color: $tertiary;
+          background-color: var(--tertiary);
+          color: var(--secondary);
+          border-color: var(--tertiary);
         }
       }
       .topic-body {
@@ -891,15 +1409,15 @@ a.mention-group {
     position: relative;
     .select-posts {
       position: absolute;
-      right: 5em;
+      right: 7em;
       z-index: z("dropdown");
       top: 0.5em;
       height: 100px;
       button {
         margin-left: 8px;
-        background-color: $primary-low;
-        color: $primary;
-        box-shadow: shadow("dropdown");
+        background-color: var(--primary-low);
+        color: var(--primary);
+        box-shadow: var(--shadow-dropdown);
       }
     }
   }
@@ -918,32 +1436,70 @@ a.mention-group {
 }
 
 .signup-cta {
+  box-sizing: border-box;
+  max-width: calc(var(--topic-body-width) + 4.5em);
+  padding: 3em 5em 2em
+    calc(var(--topic-avatar-width) + var(--topic-body-width-padding));
+  @include breakpoint(mobile-extra-large) {
+    padding: 1.5em 1.5em 0.25em;
+  }
+  h3 {
+    margin-bottom: 0.5em;
+  }
   a {
-    float: right;
     text-decoration: underline;
   }
   .buttons {
-    margin-bottom: 1em;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 1.5em 0 1em;
+    > * {
+      margin-bottom: 0.5em;
+    }
+    .btn {
+      margin-right: 0.5em;
+      white-space: nowrap;
+
+      .d-icon {
+        color: inherit;
+      }
+
+      &.btn-remind {
+        background: var(--primary-very-low);
+        margin-right: auto;
+        @include hover {
+          background: var(--primary-medium);
+        }
+      }
+      @include breakpoint(mobile-extra-large) {
+        &.btn-primary {
+          margin-right: 100%;
+        }
+      }
+    }
   }
 }
 
 .post-notice {
+  box-sizing: border-box;
   align-items: center;
-  background-color: $tertiary-low;
-  border-top: 1px solid $primary-low;
+  background-color: var(--tertiary-low);
+  border-top: 1px solid var(--primary-low);
   display: flex;
+  width: 100%;
   max-width: calc(
-    #{$topic-body-width} + (#{$topic-body-width-padding} * 2) + #{$topic-avatar-width} -
-      (0.8em * 2)
+    var(--topic-body-width) + (var(--topic-body-width-padding) * 2) +
+      var(--topic-avatar-width)
   );
-  padding: 0.8em;
-
+  padding: var(--topic-body-width-padding);
+  padding-left: 0;
   &.old {
     background-color: unset;
-    color: $primary-medium;
+    color: var(--primary-medium);
 
     .d-icon {
-      color: $primary-medium;
+      color: var(--primary-medium);
     }
   }
 
@@ -953,16 +1509,269 @@ a.mention-group {
 
   .d-icon {
     font-size: 2em;
-    color: $primary-high;
-    margin-right: 0.65em;
+    width: var(--topic-avatar-width);
+    color: var(--primary-high);
+    margin-right: var(--topic-body-width-padding);
   }
 }
 
+html.anon #topic-footer-buttons {
+  display: flex;
+  justify-content: end;
+}
+
 #topic-footer-buttons {
-  .reason {
-    color: $primary-high;
-    display: inline;
-    margin: 0 0 0 8px;
-    line-height: $line-height-medium;
+  margin: var(--below-topic-margin) 0;
+  padding: 0;
+
+  .topic-footer-main-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch; // aligns items by making them the same height
+    button,
+    details {
+      margin-right: 0.54em;
+    }
+    > * {
+      margin-bottom: 0.5em; // all immediate children should have a bottom margin in case of wrapping
+    }
+    .topic-admin-menu-button-container {
+      display: inline-flex;
+      .topic-admin-menu-button {
+        display: flex; // to make this button match siblings behavior, all of its parents need to be flex
+      }
+    }
+  }
+
+  .pinned-button:not(.is-hidden) + .topic-notifications-button {
+    margin-top: 0;
+  }
+
+  .pinned-button,
+  .topic-notifications-button {
+    margin: 0.5em 0 1em;
+
+    .reason {
+      color: var(--primary-high);
+      display: inline-flex;
+      margin: 0;
+      align-items: center;
+
+      .dropdown-select-box {
+        .select-kit-selected-name {
+          width: 100%;
+          overflow: hidden;
+        }
+        .name {
+          @include ellipsis;
+        }
+      }
+
+      .text {
+        margin-left: 0.5em;
+        line-height: var(--line-height-medium);
+      }
+    }
+  }
+}
+
+iframe {
+  max-width: 100%;
+  max-height: #{"min(1000px, 200vh)"};
+}
+
+.post-admin-menu {
+  display: inline-flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: auto;
+  max-width: 320px;
+  position: absolute;
+  text-align: left;
+  bottom: -2px;
+  right: 15px;
+}
+
+.posts-filtered-notice {
+  position: -webkit-sticky;
+  position: sticky;
+  background-color: var(--tertiary-low);
+  bottom: 0;
+  padding: 1em;
+  margin-top: 0.5em;
+  text-align: center;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  max-width: calc(
+    var(--topic-body-width) + (var(--topic-body-width-padding) * 2) +
+      var(--topic-avatar-width)
+  );
+
+  .filtered-avatar {
+    margin: 0 0.5em;
+    + .names {
+      flex: inherit;
+    }
+  }
+
+  .filtered-replies-show-all {
+    margin-left: 1em;
+  }
+
+  .filtered-user-row {
+    @include ellipsis;
+  }
+}
+
+.pausable-animated-image {
+  position: relative;
+  display: inline-block;
+
+  > canvas,
+  > .animated-image-overlay {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+  }
+
+  > canvas {
+    background-color: var(--primary-very-low);
+  }
+
+  > .animated-image-overlay {
+    pointer-events: none;
+    text-align: right;
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-end;
+    > .d-icon {
+      cursor: pointer;
+      padding: 0.5em;
+      margin: 0.5em;
+      background-color: rgba(var(--always-black-rgb), 0.25);
+      color: var(--secondary-or-primary);
+      cursor: pointer;
+      display: none;
+    }
+  }
+
+  img.animated {
+    cursor: pointer;
+  }
+
+  html.no-touch
+    &:not(.paused-animated-image)
+    .animated:hover
+    + .animated-image-overlay
+    .d-icon-pause {
+    display: initial;
+  }
+
+  &.paused-animated-image
+    .animated.manually-paused
+    + .animated-image-overlay
+    .d-icon-play {
+    display: initial;
+  }
+}
+
+.paused-animated-image {
+  img.animated {
+    // need to keep the image hidden but clickable
+    // so the user can resume animation
+    opacity: 0;
+  }
+}
+
+.open-popup-link {
+  display: inline;
+  margin-inline: 0.25em;
+  position: sticky;
+  left: 1rem;
+  opacity: 0%;
+  white-space: nowrap;
+  transition: 0.25s ease-in-out opacity;
+}
+
+.fullscreen-table-wrapper {
+  transition: all 0.6s cubic-bezier(0.165, 0.84, 0.44, 1);
+  display: block;
+  position: relative;
+}
+
+.fullscreen-table-modal .modal-inner-container,
+.fullscreen-code-modal .modal-inner-container {
+  width: max-content;
+  max-width: 90%;
+  margin: 0 auto;
+  padding: 10px;
+
+  .modal-body {
+    padding-top: 0;
+  }
+
+  thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background-color: var(--secondary);
+  }
+
+  tbody {
+    overflow-x: hidden;
+  }
+
+  td {
+    padding: 0.5rem;
+  }
+}
+
+.fullscreen-code-modal {
+  pre code {
+    max-width: none;
+  }
+}
+
+.fullscreen-table-modal {
+  .d-modal__container {
+    width: auto;
+  }
+  .d-modal__body {
+    padding-top: 0;
+    thead {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background-color: var(--secondary);
+    }
+
+    td {
+      padding: 5px 6px 5px 3px;
+    }
+  }
+}
+
+html.discourse-no-touch .fullscreen-table-wrapper:hover {
+  border-radius: 5px;
+  box-shadow: 0 2px 5px 0 rgba(var(--always-black-rgb), 0.1),
+    0 2px 10px 0 rgba(var(--always-black-rgb), 0.1);
+  .open-popup-link {
+    opacity: 100%;
+  }
+}
+
+.read-state {
+  position: absolute;
+  // We use absolute positioning here because we want it to display in the padding
+  align-self: center;
+  color: var(--tertiary-medium);
+  right: 0;
+  font-size: 0.571em;
+  &.read {
+    visibility: hidden;
+    opacity: 0;
+    transition: visibility 1s, opacity ease-out 1s;
   }
 }

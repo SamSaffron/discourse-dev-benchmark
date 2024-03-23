@@ -183,15 +183,17 @@ ImageMagick is used for generating avatars (including for test fixtures).
     brew install imagemagick
 
 ImageMagick is going to want to use the Helvetica font to generate the
-letter-avatars:
+letter-avatars. To make it available we need to extract it from the system
+fonts:
 
 ```sh
-brew install fondu
+brew install fontforge
 cd ~/Library/Fonts
-fondu /System/Library/Fonts/Helvetica.dfont
+export HELVETICA_FONT=/System/Library/Fonts/Helvetica.ttc # The extension might be dfont instead
+fontforge -c "[open(u'%s(%s)' % ('$HELVETICA_FONT', font)).generate('%s.ttf' % font) for font in fontsInFile('$HELVETICA_FONT')]"
 mkdir ~/.magick
 cd ~/.magick
-curl https://www.imagemagick.org/Usage/scripts/imagick_type_gen > type_gen
+curl https://legacy.imagemagick.org/Usage/scripts/imagick_type_gen > type_gen
 find /System/Library/Fonts /Library/Fonts ~/Library/Fonts -name "*.[to]tf" | perl type_gen -f - > type.xml
 cd /usr/local/Cellar/imagemagick/<version>/etc/ImageMagick-6
 ```
@@ -214,7 +216,7 @@ By default, development.rb will attempt to connect locally to send email.
 config.action_mailer.smtp_settings = { address: "localhost", port: 1025 }
 ```
 
-Set up [MailCatcher](https://github.com/sj26/mailcatcher) so the app can intercept
+Set up [MailHog](https://github.com/mailhog/MailHog) so the app can intercept
 outbound email and you can verify what is being sent.
 
 ## Additional Image Tooling
@@ -223,7 +225,7 @@ In addition to ImageMagick we also need to install some other image related
 software:
 
 ```sh
-brew install gifsicle jpegoptim optipng jhead
+brew install jpegoptim optipng oxipng jhead
 npm install -g svgo
 ```
 
