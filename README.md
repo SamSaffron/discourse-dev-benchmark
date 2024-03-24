@@ -98,7 +98,54 @@ cores: 32
 ruby: 3.2.2
 pg_ctl (PostgreSQL) 13.13 (Debian 13.13-1.pgdg110+1)
 Redis server v=7.0.7 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=aa8fdf92f66d6636
+```
+
+Docker Windows (i9 14900k)
+
+```
+
+PG server is ready and DB is loaded
+Creating random files for IO tests
+
+Running benchmark on 1 core
+--------------------
+
+List View (json): 43.412 (±26.1%) op/s
+Topic Create: 19.018 (±24.6%) op/s
+Post Spec: 10.492 (±0.2%) seconds
+PBKdf2 64000 sha256: 114.993 (±3.5%) op/s
+Cook README.md: 297.875 (±20.4%) op/s
+Discourse Boot: 0.885 (±1.0%) seconds
+Random Read: 22069.441 (±85.0%) op/s
+
+Running benchmark on 32 cores
+--------------------
+List View (json): 588.027 (±79.4%) op/s
+PBKdf2 64000 sha256: 1818.977 (±23.8%) op/s
+Cook README.md: 4340.2 (±41.7%) op/s
+Discourse Boot: 0.085 (±6.1%) seconds
+Random Read: 136566.919 (±102.9%) op/s
+
+
+System Info
+--------------------
+architecture: amd64
+kernelversion: 5.15.146
+memorysize: 31.26 GiB
+operatingsystem: Debian
+physicalprocessorcount: 1
+processor0: Intel(R) Core(TM) i9-14900K
+virtual: physical
+cores: 32
+ruby: 3.2.2
+pg_ctl (PostgreSQL) 13.13 (Debian 13.13-1.pgdg110+1)
+Redis server v=7.0.7 sha=00000000:0 malloc=jemalloc-5.2.1 bits=64 build=aa8fdf92f66d6636
 ruby likely running via a shim, consider chruby for faster boot
 ```
+
+
+
+
+
 
 
